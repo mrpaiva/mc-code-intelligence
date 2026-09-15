@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="DeclIndex.UnitTests/DeclIndex.UnitTests.csproj" />
+  <Project Path="DeclIndex/DeclIndex.csproj" />
+</Solution>
