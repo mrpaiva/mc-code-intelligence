@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "mc-tools",
+  "version": "1.0.0",
+  "description": "Ferramental de agentes para o código do MultiClubes/MultiVendas",
+  "owner": {
+    "name": "Mauro Paiva"
+  },
+  "plugins": [
+    {
+      "name": "mc-code-intelligence",
+      "description": "Índice de declarações C#, busca de usos e roteamento de ferramentas para o repositório Code do MultiClubes",
+      "source": "./",
+      "category": "development"
+    }
+  ]
+}

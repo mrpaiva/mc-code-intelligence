@@ -1,0 +1,11 @@
+{
+  "name": "mc-code-intelligence",
+  "version": "0.1.0",
+  "description": "Índice de declarações C# (DeclIndex), find_declarations/find_usages/summarize_file e roteamento de ferramentas injetado no início da sessão para o repositório Code do MultiClubes",
+  "author": {
+    "name": "Mauro Paiva"
+  },
+  "repository": "https://github.com/mrpaiva/mc-code-intelligence",
+  "license": "MIT",
+  "keywords": ["csharp", "code-intelligence", "multiclubes", "roslyn"]
+}

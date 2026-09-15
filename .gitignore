@@ -1,0 +1,6 @@
+# Saída de build do DeclIndex (compilado na máquina do dev pelo SessionStart)
+bin/
+obj/
+TestResults/
+*.user
+.vs/
