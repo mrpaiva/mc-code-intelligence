@@ -1,23 +1,90 @@
 # mc-code-intelligence
 
-Plugin do Claude Code para navegar o repositório `Code` do MultiClubes/MultiVendas sem varrer 22 mil
-arquivos `.cs` com `grep`. Traz três peças:
+Plugin do Claude Code para navegar o repositório `Code` do MultiClubes/MultiVendas sem varrer 23 mil
+arquivos `.cs` com `grep`.
 
-- **DeclIndex** — índice sintático de declarações C# (Roslyn, sem MSBuild), compartilhado entre worktrees e
-  atualizado por SHA de blob a cada consulta. Responde "quem declara X", "quem herda de X", "quais tipos têm
-  `[X]`", "que membros X tem", contagens por projeto ou pasta.
-- **Scripts** — `find_declarations.ps1` (consulta o índice), `find_usages.ps1` (referências, agrupadas por
-  arquivo, em todo arquivo de texto) e `summarize_file.ps1` (head + tail de um arquivo, com busca por nome).
-- **Roteamento** — no início de cada sessão aberta dentro de um checkout do `Code`, o plugin injeta a tabela
-  "pergunta → ferramenta" no contexto do agente. Fora de um checkout, o plugin fica invisível.
+## Por que existe
 
-A skill `codebase-analyzer` acompanha o plugin e dispara nas perguntas de exploração de código.
+O `Code` tem 23 mil arquivos C# em dezenas de projetos. O namespace raramente espelha a pasta, o mesmo
+nome de tipo aparece em quatro assemblies (`GameMatch` é entidade no desktop e DTO em Cloud, OnlineServices
+e Profile), e parte do código vive dentro de `#if`. Um agente que explora isso com `grep` recebe centenas de
+linhas misturando declaração com chamada, escolhe uma e lê o arquivo inteiro. Cada rodada dessas custa
+segundos de busca e milhares de tokens de contexto, e a resposta muitas vezes ainda vem incompleta.
+
+Três perguntas resumem o dia a dia de quem explora esse código com um agente:
+
+1. **Estrutura:** quem declara X? Quem herda de X? Quais tipos têm `[X]`? Que membros X tem?
+2. **Referência:** onde X é usado?
+3. **Leitura:** o que este arquivo faz?
+
+O `rg` responde bem a segunda e mal a primeira. `rg FacilityOccurrenceCalculator` devolve 60 linhas em 27
+arquivos; a única subclasse está numa delas, e a tentativa de filtrar por `: FacilityOccurrenceCalculator`
+devolve zero, porque a herança está escrita de outra forma. Foi assim que o achado mais valioso da avaliação
+de 2026-09-14 (a regra de conflito de reserva mora em `MultiClubes.Reports.UI`, e o OnlineServices depende
+desse assembly) saiu de **uma linha** do índice, e estaria enterrado nas 60 do `rg`.
+
+O plugin ataca as três perguntas com uma ferramenta para cada: um índice de declarações para a estrutura,
+uma busca compacta para a referência, e um preview para a leitura. E injeta no início da sessão a tabela
+"pergunta → ferramenta", que é o que faz o agente usar a ferramenta certa sem ninguém pedir.
+
+## O que muda
+
+Medido em 2026-09-15 no commit `da3bed4a34` de `develop` (23.074 `.cs`), num worktree dedicado. Linhas e
+bytes são da saída que o agente lê; tempos são de uma máquina com Defender ativo no disco do checkout (os
+absolutos variam com a máquina, as proporções não).
+
+| Pergunta | Com `rg` | Com o plugin | O que muda |
+|---|---|---|---|
+| Quem herda de `FacilityOccurrenceCalculator`? | `rg -n '\bFacilityOccurrenceCalculator\b'`: 60 linhas, 11 KB, 27 arquivos, 3,1 s. `rg ': FacilityOccurrenceCalculator'`: 0 | `find_declarations -Base FacilityOccurrenceCalculator`: 1 declaração (0,3 KB), 1,4 s | A resposta vem numa linha; no `rg` está enterrada em 60 |
+| Quem declara o método `Save`? | `rg -n '\bSave\s*\('`: 3.009 linhas, 404 KB, 1.067 arquivos (declaração e chamada misturadas). Regex de modificador + `Save(`: 353 linhas, 50 KB, incompleto e sem tipo | `-Name Save -Kind method`: 367 declarações com tipo, projeto e assinatura (47 KB), 0,8 s | 8,6× menos bytes que a busca crua, e completo, o que o regex caprichado não garante |
+| Que membros o partial `FormFacilityRentStepOne` tem? | achar os 2 arquivos e ler 868 linhas (29 KB) | `-Container FormFacilityRentStepOne -IncludeGenerated`: 55 membros com linha e assinatura (7 KB), 1,2 s | 4× menos bytes, e a metade do `Designer.cs` vem junto (o LSP por arquivo perde) |
+| Quem declara `GameMatch`? | `rg -n 'class GameMatch\b'`: 4 linhas. Funciona | `-Name GameMatch -Kind class`: as mesmas 4, agrupadas por projeto e namespace | Aqui o `rg` empata. O índice acrescenta o agrupamento (é o que dispara a checagem de homônimos) e enxerga código dentro de `#if` |
+| Quantos métodos cada controller de Facilities tem? | sem equivalente | `-Kind method -File MultiClubes.Controller/Facilities/ -GroupBy container`: 28 controllers ranqueados, `FacilityRentController` com 62 no topo, 0,6 s | Pergunta que antes não se fazia |
+| Quantas operações `[OperationContract]` cada serviço do OnlineServices expõe? | `rg` devolve a linha do atributo; o nome do método está na seguinte (`-A1`: 2.399 linhas, 254 KB) | `-Attribute OperationContract -File Applications/OnlineServices/ -GroupBy container`: 800 operações em 239 serviços, ranqueados (17 KB), 0,5 s | Idem |
+| Onde `FacilityRentController` é usado? | `rg -n '\bFacilityRentController\b'`: 122 ocorrências, 22 KB, 4,8 s | `find_usages FacilityRentController`: as mesmas 122, agrupadas por arquivo (5,8 KB), 5,4 s | 3,7× menos bytes pelo mesmo resultado; meio segundo a mais |
+
+Na avaliação de 2026-09-14 (exploração real do domínio Facilities, 12 perguntas), o índice respondeu 9
+sozinho e nunca deu resposta errada; o controle por `grep` é que errou uma vez, ao excluir `*.Designer.cs`
+e deixar passar um `.designer.cs` com "d" minúsculo. As 3 restantes eram de uso, e foram ao `find_usages`
+por desenho.
+
+## O custo
+
+O índice não é grátis. Os números da mesma máquina:
+
+| Momento | Custo |
+|---|---|
+| Primeira sessão em cada versão do plugin | compilar o DeclIndex: 10 a 20 s (mais o restore de pacotes na primeira vez) |
+| Primeira consulta num checkout | materializar o índice: 40 a 70 s (159 s numa máquina sob carga); um worktree novo parte do índice de outro e leva ~17 s |
+| Cada consulta sem `-NoRefresh` | 2 a 4 s, quase tudo `git status` em 23 mil arquivos |
+| Consulta com `-NoRefresh` | 0,6 s |
+
+O índice é sintático: sabe quem **declara**, não quem **usa**. Overload, herança virtual e dispatch por
+reflexão não são resolvidos. Para uso, `find_usages`; para semântica dentro de um arquivo, o LSP.
+
+## Como funciona
+
+Três peças, uma para cada pergunta:
+
+- **DeclIndex** (estrutura). Indexador sintático em C# (Roslyn, sem MSBuild). A cada consulta, `git ls-files`
+  e `git status` dizem que arquivos mudaram; só os blobs novos são parseados, e o TSV do checkout é
+  rematerializado. O armazém é compartilhado entre worktrees: um worktree novo parte do índice de outro.
+  `find_declarations.ps1` consulta o TSV com `rg`.
+- **find_usages.ps1** (referência). `rg` com limite de palavra sobre todo arquivo de texto (`.cs`, `.config`,
+  `.resx`, `.xaml`, `.sql`, `.md`), saída agrupada por arquivo. Não usa o índice: é o que torna seguro trocar
+  um `grep` cru por ele, porque o que o `grep` acharia, ele acha.
+- **summarize_file.ps1** (leitura). Head e tail de um arquivo, com busca por nome quando o caminho é
+  desconhecido, para decidir se vale ler tudo.
+
+E a cola: no início de cada sessão aberta dentro de um checkout do `Code`, o plugin injeta no contexto do
+agente a tabela "pergunta → ferramenta" com os caminhos absolutos já resolvidos. Fora de um checkout, o
+plugin fica invisível. A skill `codebase-analyzer` acompanha e dispara nas perguntas de exploração.
 
 ## Pré-requisitos
 
 - Windows
 - [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows) (`pwsh`)
-- [SDK .NET 10](https://dotnet.microsoft.com/download/dotnet/10.0) — o DeclIndex é compilado na sua máquina
+- [SDK .NET 10](https://dotnet.microsoft.com/download/dotnet/10.0): o DeclIndex é compilado na sua máquina
 - [ripgrep](https://github.com/BurntSushi/ripgrep) no `PATH`: `winget install BurntSushi.ripgrep.MSVC`
 - Claude Code
 
@@ -30,14 +97,9 @@ No Claude Code:
 /plugin install mc-code-intelligence@mc-tools
 ```
 
-Abra uma sessão dentro do checkout do `Code` (qualquer subpasta serve). Na primeira sessão de cada versão
-do plugin, o DeclIndex é compilado (10 a 20 s, mais o restore de pacotes na primeira vez). A primeira
-consulta ao `find_declarations` materializa o índice do checkout (40 a 70 s, uma vez por máquina); as
-seguintes levam 2 a 4 s, quase tudo `git status`.
-
-Para conferir que o roteamento chegou: pergunte ao agente "quem herda de `ServiceBase` em
-`Applications\MultiVendas`?" — a resposta deve vir do `find_declarations.ps1`, com arquivo e linha, sem
-`Grep` cru.
+Abra uma sessão dentro do checkout do `Code` (qualquer subpasta ou worktree serve). Para conferir que o
+roteamento chegou, pergunte ao agente "quem herda de `ServiceBase` em `Applications\MultiVendas`?": a
+resposta deve vir do `find_declarations.ps1`, com arquivo e linha, sem `Grep` cru.
 
 ## Onde as coisas ficam
 
@@ -49,7 +111,7 @@ Para conferir que o roteamento chegou: pergunte ao agente "quem herda de `Servic
 | Onde o roteamento é injetado | dentro de um checkout do `Code` | `MC_HOOK_ROOTS` (diretórios extras, separados por `;`) |
 
 O índice fica fora da pasta do plugin de propósito: a atualização troca a pasta versionada e o índice
-sobrevive.
+sobrevive. Nenhum caminho de máquina está gravado no plugin; cada dev clona o `Code` onde quiser.
 
 ## Atualização
 
@@ -71,11 +133,13 @@ exclusões.
 $s = "$HOME\.claude\plugins\cache\mc-tools\mc-code-intelligence\<versão>\skills\codebase-analyzer\scripts"
 & "$s\find_declarations.ps1" -Base ServiceBase -Kind class -File Applications/MultiVendas/
 & "$s\find_declarations.ps1" -Container GuardService
+& "$s\find_declarations.ps1" -Kind method -File MultiClubes.Controller/Facilities/ -GroupBy container
 & "$s\find_usages.ps1" DefaultConnectionString -Include *.config
 & "$s\summarize_file.ps1" CouponLotRebusManager.cs
 ```
 
-`Get-Help` de cada script traz os parâmetros; o `README.md` em `scripts\DeclIndex\` descreve o índice.
+`Get-Help` de cada script traz os parâmetros; o `README.md` em `scripts\DeclIndex\` descreve o índice
+(formato do TSV, como o refresh decide o que fazer, limitações).
 
 ## Desenvolvimento
 
@@ -87,7 +151,7 @@ Invoke-Pester -Path .\mc-code-intelligence\skills\codebase-analyzer\scripts\find
 
 Para usar o clone como plugin: `/plugin marketplace add <caminho do clone>` e o mesmo `install`. Os
 testes Pester criam uma árvore sintética (`Applications\` + `Components\`, dois `.cs`) e um armazém
-temporário — não precisam de um checkout do `Code`.
+temporário; não precisam de um checkout do `Code`.
 
 ## Licença
 
