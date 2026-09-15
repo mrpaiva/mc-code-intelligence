@@ -1,0 +1,28 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: ripgrep
+        run: choco install ripgrep -y --no-progress
+
+      - name: DeclIndex
+        run: dotnet test skills/codebase-analyzer/scripts/DeclIndex/DeclIndex.slnx --nologo
+
+      - name: find_declarations (Pester)
+        shell: pwsh
+        run: |
+          $result = Invoke-Pester -Path skills/codebase-analyzer/scripts/find_declarations.Tests.ps1 -Output Detailed -PassThru
+          if ($result.FailedCount -gt 0) { exit 1 }
