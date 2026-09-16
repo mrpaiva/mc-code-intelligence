@@ -265,6 +265,13 @@ public class HookTests
 	}
 
 	[TestMethod]
+	public void Redirecionamento_colado_ao_separador_não_leva_o_comando_seguinte_para_dentro_do_grep()
+	{
+		// "2>/dev/null;" sem espaço: o alvo do redirect ia até o espaço, levava o ";" e "echo x" virava alvo do grep.
+		Executar("Bash", Shell("grep -n \"class Foo\" README.md 2>/dev/null; echo x")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
 	public void Find_por_nome_com_curinga_cs_é_negado_como_o_Glob()
 	{
 		var decisão = Executar("Bash", Shell("find . -name \"*Controller*.cs\""));

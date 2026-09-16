@@ -30,7 +30,8 @@ public static class ShellCommandParser
 		"--color", "--colour", "-j", "--threads", "--max-depth",
 	};
 
-	private static readonly Regex Redirection = new(@"(?<=\s)(?:\d?>{1,2}|&>|<)\s*(?:&\d+|\S+)");
+	// O alvo para na pontuação do shell, não só no espaço: "2>/dev/null;" não pode levar o ";" junto.
+	private static readonly Regex Redirection = new(@"(?<=\s)(?:\d?>{1,2}|&>|<)\s*(?:&\d+|[^\s;|&()<>]+)");
 	private static readonly Regex RecursiveShortFlag = new(@"\A-[a-zA-Z]*[rR][a-zA-Z]*\z");
 	private static readonly Regex ShortFlags = new(@"\A-[a-zA-Z]+\d*\z");
 	private static readonly Regex StarExtension = new(@"\*\.([A-Za-z0-9]+)");
