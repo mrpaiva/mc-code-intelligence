@@ -131,7 +131,8 @@ if ($lines.Count -eq 0) {
 if ($GroupBy) {
     $columns = @{ kind = 0; name = 1; container = 2; project = 9; file = 8 }
     $index = $columns[$GroupBy.ToLower()]
-    $groups = $lines | ForEach-Object { ($_ -split "`t")[$index] } | Group-Object | Sort-Object Count, Name -Descending
+    # @(): com um só grupo o Sort-Object devolve o GroupInfo, e .Count viraria o tamanho do grupo, não 1.
+    $groups = @($lines | ForEach-Object { ($_ -split "`t")[$index] } | Group-Object | Sort-Object Count, Name -Descending)
     if ($Raw) {
         $groups | ForEach-Object { Write-Output "$($_.Count)`t$($_.Name)" }
         exit 0
@@ -150,7 +151,15 @@ if ($Raw) {
 
 $rows = $lines | ForEach-Object {
     $c = $_ -split "`t"
-    [PSCustomObject]@{ Kind = $c[0]; Name = $c[1]; Container = $c[2]; Modifiers = $c[3]; Signature = $c[6]; Line = [int]$c[7]; File = $c[8]; Project = $c[9] }
+    [PSCustomObject]@{ Kind = $c[0]; Name = $c[1]; Container = $c[2]; Modifiers = $c[3]; Attributes = $c[4]; Bases = $c[5]; Signature = $c[6]; Line = [int]$c[7]; File = $c[8]; Project = $c[9] }
+}
+# "[DBTable] FacilityRent : BaseIdentifiableObject<FacilityRent>, ICloneable": o TSV separa bases e atributos por
+# vírgula sem espaço (a vírgula com espaço é de argumento genérico), então só essa vira ", ".
+function Format-Declaration($row) {
+    $declaration = $row.Name
+    if ($row.Bases) { $declaration += " : " + ($row.Bases -replace ',(?! )', ', ') }
+    if ($row.Attributes) { $declaration = "[" + ($row.Attributes -replace ',(?! )', ', ') + "] " + $declaration }
+    return $declaration
 }
 $shown = 0
 foreach ($group in ($rows | Group-Object File)) {
@@ -159,7 +168,7 @@ foreach ($group in ($rows | Group-Object File)) {
     Write-Host "=== $($group.Name)  [$($group.Group[0].Project)]"
     foreach ($row in ($group.Group | Sort-Object Line)) {
         if ($shown -ge $MaxResults) { break }
-        Write-Host ("  linha {0,-5} {1,-10} {2,-18} {3}  {4}   em {5}" -f $row.Line, $row.Kind, $row.Modifiers, $row.Name, $row.Signature, $row.Container)
+        Write-Host ("  linha {0,-5} {1,-10} {2,-18} {3}  {4}   em {5}" -f $row.Line, $row.Kind, $row.Modifiers, (Format-Declaration $row), $row.Signature, $row.Container)
         $shown++
     }
 }

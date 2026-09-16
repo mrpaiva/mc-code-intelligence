@@ -28,7 +28,9 @@ antes de agir e registra descobertas no notebook.
 - LSP: funciona dentro de 1 projeto. Cross-project: find_usages/Grep.
 - Pergunta estrutural em C# (declara, herda, atributo, membros, contagem
   por kind) → find_declarations.ps1 ANTES de Grep. O índice se atualiza
-  sozinho pelo git; não precisa reindexar.
+  sozinho pelo git a cada chamada (2 a 4 s); não precisa reindexar.
+  Primeira chamada da sessão sem -NoRefresh; as seguintes com -NoRefresh
+  (0,6 s), enquanto não editar .cs.
 - Grep retornou >20 resultados? PARE. Regresse com files_with_matches,
   filtre por projeto, refine o pattern. Nunca generalize de 5 para 200.
 - Mesmo símbolo em 2+ projetos? NÃO leia nenhum ainda. Liste quais
@@ -69,6 +71,13 @@ e `Components\`); fora de um checkout, `MC_CODE_ROOT` ou `-Root`.
 "Quantos/quais enums, interfaces, classes... por projeto ou pasta?"
   → find_declarations.ps1 -Kind enummember -File Applications/X/ -GroupBy container
   → NÃO escreva parser em Python/PowerShell para contar declarações
+
+"Tabela (tipo × base, tipo × atributo) ou encadear com outro comando?"
+  → find_declarations.ps1 … -Raw | ForEach-Object { $_ -split "`t" }
+    (colunas: kind, name, container, modifiers, attributes, bases, signature,
+    line, file, project; várias bases/atributos separados por vírgula)
+  → a saída formatada já mostra "[Attr] Nome : Base1, Base2"; -Raw é para
+    montar tabela, filtrar por coluna ou contar de outro jeito
 
 "Onde X é usado no monorepo?"
   → find_usages.ps1 <símbolo> (cross-project, agrupado por arquivo)

@@ -91,3 +91,19 @@ Describe "find_declarations — resolução da raiz" {
         Get-ChildItem (Join-Path $script:store "worktrees") -Filter *.tsv | Should -Not -BeNullOrEmpty
     }
 }
+
+Describe "find_declarations — saída formatada" {
+    It "-GroupBy com um só grupo conta 1 no rodapé, não o tamanho do grupo" {
+        $result = Invoke-FindDeclarations $script:code @{ Kind = "class"; Project = "App"; GroupBy = "project" }
+
+        $result.ExitCode | Should -Be 0
+        $result.Output | Should -Match "2 declaração\(ões\) em 1 project\(s\)"
+    }
+
+    It "declaração de tipo mostra de quem herda" {
+        $result = Invoke-FindDeclarations $script:code @{ Name = "GuardService"; Kind = "class" }
+
+        $result.ExitCode | Should -Be 0
+        $result.Output | Should -Match "GuardService : ServiceBase"
+    }
+}
