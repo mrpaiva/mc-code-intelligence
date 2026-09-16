@@ -11,6 +11,18 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Glob|Grep|Read|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "e=\"${CLAUDE_PLUGIN_ROOT}/skills/codebase-analyzer/scripts/DeclIndex/DeclIndex/bin/Release/net10.0/DeclIndex.exe\"; [ -f \"$e\" ] && \"$e\" hook || true",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

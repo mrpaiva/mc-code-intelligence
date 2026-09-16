@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "mc-code-intelligence",
-      "description": "Índice de declarações C#, busca de usos e roteamento de ferramentas para o repositório Code do MultiClubes",
+      "description": "Índice de declarações C#, busca de usos, roteamento de ferramentas e hook que nega a busca crua no repositório Code do MultiClubes",
       "source": "./",
       "category": "development"
     }

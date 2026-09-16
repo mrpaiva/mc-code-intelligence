@@ -1,7 +1,8 @@
 # mc-code-intelligence
 
 Plugin do Claude Code para navegar o repositório `Code` do MultiClubes/MultiVendas sem varrer 23 mil
-arquivos `.cs` com `grep`.
+arquivos `.cs` com `grep`: um índice de declarações, uma busca de usos compacta, a tabela de roteamento
+injetada na sessão e um hook que nega a busca crua quando um script cobria.
 
 ## Por que existe
 
@@ -24,8 +25,11 @@ de 2026-09-14 (a regra de conflito de reserva mora em `MultiClubes.Reports.UI`, 
 desse assembly) saiu de **uma linha** do índice, e estaria enterrado nas 60 do `rg`.
 
 O plugin ataca as três perguntas com uma ferramenta para cada: um índice de declarações para a estrutura,
-uma busca compacta para a referência, e um preview para a leitura. E injeta no início da sessão a tabela
-"pergunta → ferramenta", que é o que faz o agente usar a ferramenta certa sem ninguém pedir.
+uma busca compacta para a referência, e um preview para a leitura. Injeta no início da sessão a tabela
+"pergunta → ferramenta", que é o que faz o agente usar a ferramenta certa sem ninguém pedir. E quando o
+agente ainda assim tenta `grep -rn "class X"` numa pasta com C#, o hook `PreToolUse` nega a chamada e
+devolve o comando certo: a medição de 2026-09-11 mostrou que só a tabela na skill não muda o comportamento,
+porque a skill não é carregada para toda pergunta; o hook é o que garante.
 
 ## O que muda
 
@@ -58,6 +62,7 @@ O índice não é grátis. Os números da mesma máquina:
 | Primeira consulta num checkout | materializar o índice: 40 a 70 s (159 s numa máquina sob carga); um worktree novo parte do índice de outro e leva ~17 s |
 | Cada consulta sem `-NoRefresh` | 2 a 4 s, quase tudo `git status` em 23 mil arquivos |
 | Consulta com `-NoRefresh` | 0,6 s |
+| Hook `PreToolUse`, por chamada de `Glob`/`Grep`/`Read`/`Bash`/`PowerShell` | 0,23 s no exe (0,44 s pela cadeia do `bash` que o Claude Code usa); o hook Python que ele substitui custava 0,40 s (0,59 s) |
 
 O índice é sintático: sabe quem **declara**, não quem **usa**. Overload, herança virtual e dispatch por
 reflexão não são resolvidos. Para uso, `find_usages`; para semântica dentro de um arquivo, o LSP.
@@ -76,9 +81,16 @@ Três peças, uma para cada pergunta:
 - **summarize_file.ps1** (leitura). Head e tail de um arquivo, com busca por nome quando o caminho é
   desconhecido, para decidir se vale ler tudo.
 
-E a cola: no início de cada sessão aberta dentro de um checkout do `Code`, o plugin injeta no contexto do
-agente a tabela "pergunta → ferramenta" com os caminhos absolutos já resolvidos. Fora de um checkout, o
-plugin fica invisível. A skill `codebase-analyzer` acompanha e dispara nas perguntas de exploração.
+E a cola, em duas partes. No início de cada sessão aberta dentro de um checkout do `Code`, o plugin injeta
+no contexto do agente a tabela "pergunta → ferramenta" com os caminhos absolutos já resolvidos. E a cada
+chamada de `Glob`, `Grep`, `Read`, `Bash` ou `PowerShell`, o hook `PreToolUse` (o verbo `DeclIndex hook`,
+sem Python) aplica as regras: padrão com cara de declaração C# em alvo C# é negado com o comando exato do
+`find_declarations`; identificador puro em pasta com `.cs` é negado apontando os dois scripts; regex real,
+contexto (`-A/-B/-C`), `-i`, multiline ou arquivo único passam; `grep`, `rg`, `git grep`, `findstr` e
+`Select-String` dentro do shell seguem a mesma regra, e `find -name "*.cs"` segue a do `Glob`. Leitura
+integral de `.cs` com 2000+ linhas (ou outro código com 500+) sem `limit` é negada apontando o
+`summarize_file`. Fora de um checkout (ou de `MC_HOOK_ROOTS`), nada disso acontece: o plugin fica invisível.
+A skill `codebase-analyzer` acompanha e dispara nas perguntas de exploração.
 
 ## Pré-requisitos
 
