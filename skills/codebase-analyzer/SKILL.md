@@ -118,6 +118,11 @@ Vai ler método >50 linhas? Viu try/catch em operação com efeito colateral?
 Já leu 3+ arquivos nesta exploração?
   → leia references/investigation.md
 
+Mesmo nome definido em 2+ projetos, LSP lento ou incompleto, ou dúvida
+sobre qual ferramenta responde a pergunta?
+  → leia references/code-intelligence.md (hierarquia completa, gate de
+    múltiplas definições, latência do LSP, fluxos por tipo de tarefa)
+
 ## Notebook
 
 Organizado em `<notebookPath>/[Projeto]/INDEX.md` + `[tópico].md`.
