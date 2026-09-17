@@ -1,9 +1,11 @@
-# SessionStart do plugin mc-code-intelligence. Faz duas coisas e sai:
-#   1. dentro de um checkout do Code (ou de MC_HOOK_ROOTS), compila o DeclIndex se o executável ainda não
-#      existe — uma vez por versão do plugin, porque a atualização troca a pasta versionada;
+# SessionStart do plugin mc-code-intelligence — o bootstrap. O hooks.json chama o DeclIndex.Hook.exe (verbo
+# SessionStart, ver DeclIndex.Hook\SessionStart.cs) quando ele existe, e este script só quando ainda não existe:
+# primeira sessão de uma versão do plugin, ou máquina que nunca compilou. Faz duas coisas e sai:
+#   1. dentro de um checkout do Code (ou de MC_HOOK_ROOTS), compila o DeclIndex e o DeclIndex.Hook se algum
+#      executável ainda não existe — uma vez por versão do plugin, porque a atualização troca a pasta versionada;
 #   2. devolve o bloco de roteamento (hooks\routing.md com os caminhos absolutos resolvidos) como
 #      additionalContext. Fora do escopo não devolve nada: o plugin é invisível nos outros projetos do dev.
-# Nunca falha a sessão: qualquer erro vira uma linha no contexto.
+# Nunca falha a sessão: qualquer erro vira uma linha no contexto. Mudança aqui tem de ser espelhada no .cs.
 
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8

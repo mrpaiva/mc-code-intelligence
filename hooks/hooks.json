@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.ps1\"",
+            "command": "e=\"${CLAUDE_PLUGIN_ROOT}/skills/codebase-analyzer/scripts/DeclIndex/DeclIndex.Hook/bin/Release/net10.0/DeclIndex.Hook.exe\"; if [ -f \"$e\" ]; then \"$e\"; else pwsh -NoProfile -ExecutionPolicy Bypass -File \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.ps1\"; fi",
             "timeout": 180
           }
         ]

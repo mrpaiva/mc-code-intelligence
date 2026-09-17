@@ -58,7 +58,8 @@ O índice não é grátis. Os números da mesma máquina:
 
 | Momento | Custo |
 |---|---|
-| Primeira sessão em cada versão do plugin | compilar o DeclIndex: 10 a 20 s (mais o restore de pacotes na primeira vez) |
+| Primeira sessão em cada versão do plugin | compilar o DeclIndex: 10 a 20 s (mais o restore de pacotes na primeira vez), pelo `session-start.ps1` |
+| Início das demais sessões | injetar o roteamento: ~1,1 s no `DeclIndex.Hook.exe` (o `pwsh` levava 2,7 a 4 s isolado, 5 a 12 s em sessão) |
 | Primeira consulta num checkout | materializar o índice: 40 a 70 s (159 s numa máquina sob carga), mais ~12 s para o corpus de texto (46 mil arquivos, 218 MB); um worktree novo parte do índice de outro e leva ~17 s |
 | Consulta que precisa de refresh (primeira em 60 s, ou depois de Edit/Write na worktree, ou index do git reescrito) | 2 a 4 s, quase tudo `git status` em 46 mil arquivos |
 | Consulta com TSV, manifesto e corpus reusados (as demais) ou com `-NoRefresh` | 0,3 a 0,6 s no `find_declarations`; 0,8 a 1,3 s no `find_usages` (0,2 a 0,4 s de busca, o resto é o host .NET subindo) |
@@ -94,7 +95,9 @@ Três peças, uma para cada pergunta:
   desconhecido, para decidir se vale ler tudo.
 
 E a cola, em duas partes. No início de cada sessão aberta dentro de um checkout do `Code`, o plugin injeta
-no contexto do agente a tabela "pergunta → ferramenta" com os caminhos absolutos já resolvidos. E a cada
+no contexto do agente a tabela "pergunta → ferramenta" com os caminhos absolutos já resolvidos (pelo mesmo
+`DeclIndex.Hook.exe`, em ~1,1 s; o `session-start.ps1` em `pwsh` fica como bootstrap da primeira sessão de cada
+versão, que compila os dois executáveis). E a cada
 chamada de `Glob`, `Grep`, `Read`, `Bash` ou `PowerShell`, o hook `PreToolUse` (o `DeclIndex.Hook.exe`, um
 executável só com as regras, sem Roslyn e sem Python) aplica as regras: padrão com cara de declaração C# em alvo C# é negado com o comando exato do
 `find_declarations`; identificador puro em pasta com `.cs` é negado apontando os dois scripts; regex real,

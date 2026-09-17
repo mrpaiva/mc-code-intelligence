@@ -102,7 +102,10 @@ git não foi reescrito e nenhum marcador `.dirty` (hook PostToolUse de Edit/Writ
 
 Números de referência no `Code` (22 mil `.cs`, 3,5 M linhas; 46 mil arquivos de texto): primeira indexação 40 a
 70 s, mais ~12 s para o corpus; sem mudança 2 a 3 s (quase tudo `git status`) ou 0,2 s no caminho rápido;
-worktree nova a partir da semente 5 a 8 s.
+worktree nova a partir da semente 5 a 8 s. Do caminho frio, `git ls-files` custa ~0,5 s (0,27 s é o startup do
+`git.exe` sob antivírus; o índice de 7,9 MB lê em 24 ms) e `git status` 0,9 a 2,9 s, que é o stat dos 46 mil
+arquivos — `core.fsmonitor=true` + `core.untrackedCache=true` no repositório derrubariam isso para décimos, mas
+é decisão do dono do checkout (sobe um daemon por repositório), não do plugin.
 
 ## Invalidar de propósito
 
