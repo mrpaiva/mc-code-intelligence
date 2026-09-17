@@ -11,6 +11,8 @@
     só aparece com -IncludeGenerated.
     -NoRefresh consulta o TSV já materializado sem passar pelo git (mais rápido; pode estar defasado).
     -Name aceita curinga (* e ?): -Name *Controller lista quem termina em Controller; sem curinga é nome exato.
+    Tipo genérico se pede sem a aridade, em -Name e em -Container: -Container OrderController acha os membros
+    de OrderController`1 (o TSV guarda o nome com a aridade).
     Colunas do TSV: kind, name, container, modifiers, attributes, bases, signature, line, file, project.
     A linha é a do identificador (a de "class X"/"void M("), não a do atributo que o precede.
 .EXAMPLE
@@ -104,7 +106,7 @@ function Column([int]$index, [string]$pattern) { "(?=^(?:[^\t]*\t){$index}(?:$pa
 
 $filters = @()
 if ($Name)      { $filters += Column 1 (([regex]::Escape($Name) -replace '\\\*', '[^\t]*' -replace '\\\?', '[^\t]') + '(?:`\d+)?') }
-if ($Container) { $filters += Column 2 ('(?:[^\t]*\.)?' + [regex]::Escape($Container)) }
+if ($Container) { $filters += Column 2 ('(?:[^\t]*\.)?' + [regex]::Escape($Container) + '(?:`\d+)?') }
 if ($File)      { $filters += Column 8 ('[^\t]*' + [regex]::Escape(($File -replace '\\', '/')) + '[^\t]*') }
 if ($Project)   { $filters += Column 9 ([regex]::Escape($Project)) }
 if ($Kind)      { $filters += Column 0 (($Kind -split '[,\s]+' | Where-Object { $_ } | ForEach-Object { [regex]::Escape($_) }) -join '|') }

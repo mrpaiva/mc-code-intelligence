@@ -19,6 +19,7 @@ BeforeAll {
         Set-Content (Join-Path $root "Applications\App\Src\App.csproj") '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>'
         Set-Content (Join-Path $root "Applications\App\Src\GuardService.cs") "namespace App.Services;`npublic class GuardService : ServiceBase { public void Check() { } }`npublic class ServiceBase { }"
         Set-Content (Join-Path $root "Components\Comp\Helper.cs") "namespace Comp;`npublic static class Helper { public static int Sum(int a, int b) => a + b; }"
+        Set-Content (Join-Path $root "Components\Comp\Repository.cs") "namespace Comp;`npublic class Repository<T> { public Repository() { } public int Count { get; } }"
         git -C $root init -q
         git -C $root add -A
         git -C $root -c user.name=pester -c user.email=pester@local commit -q -m init
@@ -105,5 +106,13 @@ Describe "find_declarations — saída formatada" {
 
         $result.ExitCode | Should -Be 0
         $result.Output | Should -Match "GuardService : ServiceBase"
+    }
+
+    It "-Container sem a aridade acha os membros de um tipo genérico (Repository -> Repository``1)" {
+        $result = Invoke-FindDeclarations $script:code @{ Container = "Repository"; Kind = "ctor,property" }
+
+        $result.ExitCode | Should -Be 0
+        $result.Output | Should -Match "2 declaração\(ões\) em 1 arquivo\(s\)"
+        $result.Output | Should -Match "Count"
     }
 }
