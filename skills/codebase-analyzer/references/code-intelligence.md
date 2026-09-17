@@ -22,6 +22,10 @@ Linguagem-agnóstica — vale para C#, SQL, JS/TS, .cshtml, .php:
 - `& "<Base directory>\scripts\find_usages.ps1" <símbolo>` — referências
   word-boundary, saída compacta agrupada por arquivo. **~60% mais econômico
   em token** que `Grep --output_mode=content` em buscas com muitos matches.
+  Dentro de um checkout consulta o corpus do DeclIndex (todo arquivo de texto da
+  worktree, até 1 MB, compartilhado entre worktrees; ~0,6 s contra 5 a 9 s do rg na
+  árvore); o símbolo é literal, não regex, e arquivo modificado sem commit sai com
+  o conteúdo atual. `-Include *.cs` restringe; `-Path` limita a uma pasta.
 - `Grep` nativo — quando precisar de regex, contexto (-A/-B/-C), ou
   `output_mode=files_with_matches` para listar só caminhos.
 

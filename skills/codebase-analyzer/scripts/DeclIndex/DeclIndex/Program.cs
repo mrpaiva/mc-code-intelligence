@@ -1,10 +1,13 @@
-// Índice de declarações C# do monorepo. Uso:
-//   DeclIndex refresh --worktree <raiz> [--store <dir>] [--quiet]   atualiza o índice e imprime o caminho do TSV
+// Índice de declarações C# e corpus de texto do monorepo. Uso:
+//   DeclIndex refresh --worktree <raiz> [--store <dir>] [--quiet]   atualiza índice, manifesto e corpus; imprime o caminho do TSV
+//   DeclIndex usages --worktree <raiz> --symbol <nome> [--scope <pasta>] [--include <glob>]... [--no-refresh]
+//                                                                    onde o símbolo aparece como palavra inteira, em todo texto
+//                                                                    da worktree: uma linha "caminho<TAB>linha" por acerto
 //   DeclIndex closure --worktree <raiz> (--scope <pasta> | --symbol <nome> | --file <arquivo>) [--no-refresh]
 //                                                                    fatia para análise de serviços WCF: tipos (coluna
 //                                                                    extra "loaded" 1/0) e membros dos tipos carregados
-//   DeclIndex prune [--store <dir>]                                  remove blobs sem referência em manifesto algum
-// Códigos de saída: 0 ok, 1 uso, 2 git falhou.
+//   DeclIndex prune [--store <dir>]                                  remove blobs e linhas do corpus sem referência em manifesto algum
+// Códigos de saída: 0 ok, 1 uso, 2 git ou armazém falhou.
 
 using DeclIndex;
 
@@ -14,6 +17,7 @@ string? worktree = null;
 string? scope = null;
 string? symbol = null;
 string? file = null;
+var includes = new List<string>();
 var quiet = false;
 var noRefresh = false;
 var command = args.Length > 0 ? args[0] : "";
@@ -27,6 +31,7 @@ for (var index = 1; index < args.Length; index++)
 		case "--scope": scope = args[++index]; break;
 		case "--symbol": symbol = args[++index]; break;
 		case "--file": file = args[++index]; break;
+		case "--include": includes.Add(args[++index]); break;
 		case "--quiet": quiet = true; break;
 		case "--no-refresh": noRefresh = true; break;
 		default: return Usage();
@@ -39,6 +44,8 @@ try
 	{
 		case "refresh" when worktree != null:
 			return RunRefresh(worktree, store, quiet);
+		case "usages" when worktree != null && symbol != null:
+			return RunUsages(worktree, store, symbol, scope, includes, noRefresh);
 		case "closure" when worktree != null && (scope != null || symbol != null || file != null):
 			return RunClosure(worktree, store, scope, symbol, file, noRefresh);
 		case "prune":
@@ -47,10 +54,30 @@ try
 			return Usage();
 	}
 }
-catch (GitException exception)
+catch (Exception exception) when (exception is GitException or IOException)
 {
 	Console.Error.WriteLine(exception.Message);
 	return 2;
+}
+
+static int RunUsages(string worktree, string store, string symbol, string? scope, List<string> includes, bool noRefresh)
+{
+	var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+	var root = Path.GetFullPath(worktree);
+
+	if (!noRefresh || !File.Exists(WorktreeIndex.ManifestPathFor(store, root)))
+	{
+		var report = Refresh.Run(root, store);
+		foreach (var error in report.ParseErrors) Console.Error.WriteLine($"parse-error\t{error}");
+	}
+
+	var usages = Usages.Find(store, root, symbol, scope, includes);
+
+	using var output = new StreamWriter(Console.OpenStandardOutput(), new System.Text.UTF8Encoding(false)) { NewLine = "\n" };
+	foreach (var usage in usages) output.WriteLine($"{usage.Path}\t{usage.Line}");
+
+	Console.Error.WriteLine($"usages: {usages.Count} referência(s) em {usages.Select(usage => usage.Path).Distinct().Count()} arquivo(s) | {stopwatch.ElapsedMilliseconds:N0} ms");
+	return 0;
 }
 
 static int RunClosure(string worktree, string store, string? scope, string? symbol, string? file, bool noRefresh)
@@ -92,7 +119,7 @@ static int RunRefresh(string worktree, string store, bool quiet)
 	{
 		var phases = report.Phases;
 		if (report.Reused) Console.Error.WriteLine($"arquivos: {report.Files} | TSV reusado (carimbo dentro de {Freshness.Window.TotalSeconds:N0} s, index do git igual, sem edição pelo agente) | {report.Elapsed.TotalMilliseconds:N0} ms");
-		else Console.Error.WriteLine($"arquivos: {report.Files} | parseados: {report.Parsed} | blobs lidos: {report.BlobsRead} | invalidou: {report.Invalidated} | erros de parse: {report.ParseErrors.Count} | {report.Elapsed.TotalMilliseconds:N0} ms (git {phases.GitMs} + leitura {phases.ReadMs} + parse {phases.ParseMs} + materialização {phases.MaterializeMs})");
+		else Console.Error.WriteLine($"arquivos: {report.Files} (texto: {report.Texts}) | parseados: {report.Parsed} | blobs lidos: {report.BlobsRead} | corpus +{report.CorpusAppended} | invalidou: {report.Invalidated} | erros de parse: {report.ParseErrors.Count} | {report.Elapsed.TotalMilliseconds:N0} ms (git {phases.GitMs} + leitura {phases.ReadMs} + parse {phases.ParseMs} + materialização {phases.MaterializeMs} + corpus {phases.CorpusMs})");
 	}
 
 	Console.WriteLine(report.TsvPath);
@@ -101,7 +128,7 @@ static int RunRefresh(string worktree, string store, bool quiet)
 
 static int Usage()
 {
-	Console.Error.WriteLine("uso: DeclIndex refresh --worktree <raiz> [--store <dir>] [--quiet] | DeclIndex closure --worktree <raiz> (--scope <pasta> | --symbol <nome> | --file <arquivo>) [--no-refresh] | DeclIndex prune [--store <dir>]");
+	Console.Error.WriteLine("uso: DeclIndex refresh --worktree <raiz> [--store <dir>] [--quiet] | DeclIndex usages --worktree <raiz> --symbol <nome> [--scope <pasta>] [--include <glob>]... [--no-refresh] | DeclIndex closure --worktree <raiz> (--scope <pasta> | --symbol <nome> | --file <arquivo>) [--no-refresh] | DeclIndex prune [--store <dir>]");
 	return 1;
 }
 
@@ -121,5 +148,6 @@ static int Prune(string storeRoot)
 	}
 
 	new BlobStore(storeRoot).Prune(referenced);
+	new Corpus(storeRoot).Prune(referenced);
 	return 0;
 }

@@ -45,7 +45,7 @@ absolutos variam com a máquina, as proporções não).
 | Quem declara `GameMatch`? | `rg -n 'class GameMatch\b'`: 4 linhas. Funciona | `-Name GameMatch -Kind class`: as mesmas 4, agrupadas por projeto e namespace | Aqui o `rg` empata. O índice acrescenta o agrupamento (é o que dispara a checagem de homônimos) e enxerga código dentro de `#if` |
 | Quantos métodos cada controller de Facilities tem? | sem equivalente | `-Kind method -File MultiClubes.Controller/Facilities/ -GroupBy container`: 28 controllers ranqueados, `FacilityRentController` com 62 no topo, 0,6 s | Pergunta que antes não se fazia |
 | Quantas operações `[OperationContract]` cada serviço do OnlineServices expõe? | `rg` devolve a linha do atributo; o nome do método está na seguinte (`-A1`: 2.399 linhas, 254 KB) | `-Attribute OperationContract -File Applications/OnlineServices/ -GroupBy container`: 800 operações em 239 serviços, ranqueados (17 KB), 0,5 s | Idem |
-| Onde `FacilityRentController` é usado? | `rg -n '\bFacilityRentController\b'`: 122 ocorrências, 22 KB, 4,8 s | `find_usages FacilityRentController`: as mesmas 122, agrupadas por arquivo (5,8 KB), 5,4 s | 3,7× menos bytes pelo mesmo resultado; meio segundo a mais |
+| Onde `FacilityRentController` é usado? | `rg -n '\bFacilityRentController\b'`: 122 ocorrências, 22 KB, 4,8 s (8,7 s em 2026-09-17) | `find_usages FacilityRentController`: as mesmas 122, agrupadas por arquivo (5,8 KB); 5,4 s quando ainda era `rg` na árvore, 0,6 s com o corpus (2026-09-17) | 3,7× menos bytes pelo mesmo resultado, e o corpus tirou o meio segundo a mais |
 
 Na avaliação de 2026-09-14 (exploração real do domínio Facilities, 12 perguntas), o índice respondeu 9
 sozinho e nunca deu resposta errada; o controle por `grep` é que errou uma vez, ao excluir `*.Designer.cs`
@@ -79,9 +79,13 @@ Três peças, uma para cada pergunta:
   stash, reset); fora disso a consulta reusa o TSV sem spawnar git. Edição por fora do agente (IDE, `sed`)
   entra quando a janela vence. O armazém é compartilhado entre worktrees: um worktree novo parte do índice de outro.
   `find_declarations.ps1` consulta o TSV com `rg`.
-- **find_usages.ps1** (referência). `rg` com limite de palavra sobre todo arquivo de texto (`.cs`, `.config`,
-  `.resx`, `.xaml`, `.sql`, `.md`), saída agrupada por arquivo. Não usa o índice: é o que torna seguro trocar
-  um `grep` cru por ele, porque o que o `grep` acharia, ele acha.
+- **find_usages.ps1** (referência). Palavra inteira sobre o **corpus**: o texto de todo arquivo da worktree
+  (`.cs`, `.config`, `.resx`, `.xaml`, `.sql`, `.md`, `.js`, `.csproj`...), até 1 MB e não binário, guardado
+  uma vez por SHA de blob em `corpus.txt` (`id:linha:texto`) e compartilhado entre worktrees; o mesmo refresh
+  do `find_declarations` acrescenta os blobs novos. A consulta (`DeclIndex usages`) varre o corpus mapeado em
+  memória e traduz os acertos para os caminhos da worktree pelo manifesto, então arquivo modificado sem commit
+  sai com o conteúdo atual. O que o `grep` da árvore acharia, ele acha — os mesmos 122 acertos de
+  `FacilityRentController` em 0,6 s, contra 8,7 s do `rg` na árvore. Fora de um checkout, cai no `rg`.
 - **summarize_file.ps1** (leitura). Head e tail de um arquivo, com busca por nome quando o caminho é
   desconhecido, para decidir se vale ler tudo.
 
@@ -101,7 +105,8 @@ A skill `codebase-analyzer` acompanha e dispara nas perguntas de exploração.
 - Windows
 - [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows) (`pwsh`)
 - [SDK .NET 10](https://dotnet.microsoft.com/download/dotnet/10.0): o DeclIndex é compilado na sua máquina
-- [ripgrep](https://github.com/BurntSushi/ripgrep) no `PATH`: `winget install BurntSushi.ripgrep.MSVC`
+- [ripgrep](https://github.com/BurntSushi/ripgrep) no `PATH`: `winget install BurntSushi.ripgrep.MSVC` (o
+  `find_declarations` consulta o TSV com ele; o `find_usages` só o usa fora de um checkout)
 - Claude Code
 
 ## Instalação

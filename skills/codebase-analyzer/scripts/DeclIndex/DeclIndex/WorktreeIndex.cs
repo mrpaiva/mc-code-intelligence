@@ -19,6 +19,35 @@ public static class WorktreeIndex
 	public static bool ManifestMatches(string manifestPath, IReadOnlyList<SourceEntry> entries)
 		=> File.Exists(manifestPath) && File.ReadAllLines(manifestPath).SequenceEqual(entries.Select(ManifestLine));
 
+	/// <summary>Só os .cs de cada lado: mudança em .resx ou .config troca o manifesto, mas não o que o TSV contém.</summary>
+	public static bool ManifestMatchesCSharp(string manifestPath, IReadOnlyList<SourceEntry> entries)
+		=> File.Exists(manifestPath) && File.ReadAllLines(manifestPath).Where(line => line.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)).SequenceEqual(entries.Where(entry => entry.IsCSharp).Select(ManifestLine));
+
+	public static void WriteManifest(string manifestPath, IReadOnlyList<SourceEntry> entries)
+		=> AtomicFile.WriteLines(manifestPath, entries.Select(ManifestLine));
+
+	/// <summary>Caminhos dos shas pedidos no manifesto da worktree — o mesmo conteúdo pode estar em mais de um arquivo.</summary>
+	public static Dictionary<string, List<string>> ReadManifest(string manifestPath, IReadOnlySet<string> shas)
+	{
+		var paths = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+		if (shas.Count == 0) return paths;
+
+		foreach (var line in File.ReadLines(manifestPath))
+		{
+			var tab = line.IndexOf('\t');
+			if (tab < 0) continue;
+
+			var sha = line[..tab];
+			if (!shas.Contains(sha)) continue;
+
+			if (!paths.TryGetValue(sha, out var list)) paths[sha] = list = [];
+
+			list.Add(line[(tab + 1)..]);
+		}
+
+		return paths;
+	}
+
 	/// <summary>Escolhe a semente: o próprio TSV da worktree ou, se não houver, o TSV mais recente de outra worktree do armazém.</summary>
 	public static string? SeedFor(string store, string tsvPath)
 	{
@@ -31,11 +60,13 @@ public static class WorktreeIndex
 	}
 
 	/// <summary>
-	/// Materializa reaproveitando a semente: linhas de arquivos cujo (caminho, sha) não mudou são copiadas;
-	/// só os demais leem blob. Devolve quantos blobs foram lidos.
+	/// Materializa os .cs reaproveitando a semente: linhas de arquivos cujo (caminho, sha) não mudou são copiadas;
+	/// só os demais leem blob. O manifesto é do chamador, gravado depois — a semente é lida com o manifesto anterior.
+	/// Devolve quantos blobs foram lidos.
 	/// </summary>
-	public static int Materialize(string tsvPath, string manifestPath, IReadOnlyList<SourceEntry> entries, BlobStore store, ProjectResolver projects, string? seedTsvPath)
+	public static int Materialize(string tsvPath, IReadOnlyList<SourceEntry> entries, BlobStore store, ProjectResolver projects, string? seedTsvPath)
 	{
+		entries = entries.Where(entry => entry.IsCSharp).ToList();
 		var reusable = LoadReusable(seedTsvPath, entries);
 		var changed = entries.Where(entry => !reusable.ContainsKey(entry.RelativePath)).ToList();
 		var fresh = new ConcurrentDictionary<string, List<string>>();
@@ -54,7 +85,6 @@ public static class WorktreeIndex
 		}
 
 		AtomicFile.WriteLines(tsvPath, lines);
-		AtomicFile.WriteLines(manifestPath, entries.Select(ManifestLine));
 
 		return changed.Count;
 	}

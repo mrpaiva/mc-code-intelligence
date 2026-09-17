@@ -45,7 +45,7 @@ if (-not (Test-Path $exe) -or -not (Test-Path $hookExe)) {
     }
 }
 if (-not (Get-Command rg -ErrorAction SilentlyContinue)) {
-    $notes += "> ⚠️ ``rg`` (ripgrep) não está no PATH; ``find_declarations`` e ``find_usages`` precisam dele."
+    $notes += "> ⚠️ ``rg`` (ripgrep) não está no PATH; ``find_declarations`` precisa dele (e ``find_usages`` fora de um checkout)."
 }
 
 # ---------- Roteamento ----------

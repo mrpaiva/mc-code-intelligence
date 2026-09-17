@@ -10,6 +10,19 @@ public static class SourceReader
 
 	public static string Read(string path) => Decode(File.ReadAllBytes(path));
 
+	/// <summary>Texto para o corpus; null se passa de <see cref="Corpus.MaxBytes"/> ou é binário (NUL sem BOM UTF-16), como o rg pula.</summary>
+	public static string? ReadText(string path)
+	{
+		var info = new FileInfo(path);
+		if (!info.Exists || info.Length > Corpus.MaxBytes) return null;
+
+		var bytes = File.ReadAllBytes(path);
+		var utf16 = bytes.Length >= 2 && ((bytes[0] == 0xFF && bytes[1] == 0xFE) || (bytes[0] == 0xFE && bytes[1] == 0xFF));
+		if (!utf16 && Array.IndexOf(bytes, (byte)0) >= 0) return null;
+
+		return Decode(bytes);
+	}
+
 	public static string Decode(byte[] bytes)
 	{
 		if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF) return Encoding.UTF8.GetString(bytes, 3, bytes.Length - 3);

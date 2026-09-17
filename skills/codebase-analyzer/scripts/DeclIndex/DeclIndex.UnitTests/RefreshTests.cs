@@ -161,6 +161,49 @@ public class RefreshTests
 	}
 
 	[TestMethod]
+	public void Texto_que_não_é_cs_entra_no_manifesto_e_no_corpus_mas_não_no_TSV()
+	{
+		var relatório = Refresh.Run(raiz, store);
+
+		relatório.Files.Should().Be(2, "só os .cs contam para o índice de declarações");
+		relatório.Texts.Should().Be(3);
+		relatório.CorpusAppended.Should().Be(3);
+		File.ReadAllLines(WorktreeIndex.ManifestPathFor(store, raiz)).Should().Contain(l => l.EndsWith("\tApp/App.csproj"));
+		File.ReadAllLines(relatório.TsvPath).Should().NotContain(l => l.Contains("App.csproj"));
+		new Corpus(store).Search("Project").Should().ContainSingle();
+	}
+
+	[TestMethod]
+	public void Edição_em_arquivo_que_não_é_cs_atualiza_manifesto_e_corpus_sem_rematerializar_o_TSV()
+	{
+		var tsv = Refresh.Run(raiz, store).TsvPath;
+		var antes = File.GetLastWriteTimeUtc(tsv);
+		File.WriteAllText(Path.Combine(raiz, "App", "App.csproj"), "<Project><Novo /></Project>");
+		MarcarEdição();
+
+		var relatório = Refresh.Run(raiz, store);
+
+		relatório.Reused.Should().BeFalse();
+		relatório.BlobsRead.Should().Be(0);
+		relatório.CorpusAppended.Should().Be(1);
+		File.GetLastWriteTimeUtc(tsv).Should().Be(antes);
+		new Corpus(store).Search("Novo").Should().ContainSingle();
+	}
+
+	[TestMethod]
+	public void Binário_é_registrado_no_corpus_sem_texto_e_não_é_relido()
+	{
+		File.WriteAllBytes(Path.Combine(raiz, "App", "logo.png"), [(byte)'S', (byte)'E', (byte)'G', 0, (byte)'R', (byte)'E', (byte)'D', (byte)'O']);
+		Refresh.Run(raiz, store).CorpusAppended.Should().Be(4);
+		MarcarEdição();
+
+		var relatório = Refresh.Run(raiz, store);
+
+		relatório.CorpusAppended.Should().Be(0);
+		new Corpus(store).Search("SEG").Should().BeEmpty();
+	}
+
+	[TestMethod]
 	public void Segunda_atualização_dentro_da_janela_reusa_o_TSV_sem_consultar_o_git()
 	{
 		var primeira = Refresh.Run(raiz, store);

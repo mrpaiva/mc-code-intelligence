@@ -3,11 +3,14 @@ using System.Text;
 
 namespace DeclIndex;
 
-public sealed record SourceEntry(string RelativePath, string Sha);
+public sealed record SourceEntry(string RelativePath, string Sha)
+{
+	public bool IsCSharp => RelativePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase);
+}
 
 public sealed class GitException(string message) : Exception(message);
 
-/// <summary>Lista os .cs da worktree com o SHA de blob que o git conhece, recalculando o dos modificados e não rastreados.</summary>
+/// <summary>Lista os arquivos da worktree com o SHA de blob que o git conhece, recalculando o dos modificados e não rastreados. Os .cs alimentam o índice de declarações; todos alimentam o corpus.</summary>
 public static class GitWorktree
 {
 	private static readonly Encoding Utf8SemBom = new UTF8Encoding(false);
@@ -16,7 +19,7 @@ public static class GitWorktree
 	{
 		var tracked = new Dictionary<string, string>(StringComparer.Ordinal);
 
-		foreach (var record in Run(root, "ls-files", "-s", "-z", "--", "*.cs").Split('\0', StringSplitOptions.RemoveEmptyEntries))
+		foreach (var record in Run(root, "ls-files", "-s", "-z").Split('\0', StringSplitOptions.RemoveEmptyEntries))
 		{
 			var tab = record.IndexOf('\t');
 			var fields = record[..tab].Split(' ');
@@ -24,7 +27,7 @@ public static class GitWorktree
 		}
 
 		var dirty = new List<string>();
-		var records = Run(root, "status", "--porcelain", "-z", "--no-renames", "--untracked-files=all", "--", "*.cs").Split('\0', StringSplitOptions.RemoveEmptyEntries);
+		var records = Run(root, "status", "--porcelain", "-z", "--no-renames", "--untracked-files=all").Split('\0', StringSplitOptions.RemoveEmptyEntries);
 
 		for (var index = 0; index < records.Length; index++)
 		{
@@ -47,7 +50,6 @@ public static class GitWorktree
 		}
 
 		return tracked
-			.Where(pair => pair.Key.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
 			.Select(pair => new SourceEntry(pair.Key, pair.Value))
 			.OrderBy(entry => entry.RelativePath, StringComparer.Ordinal)
 			.ToList();

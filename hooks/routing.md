@@ -58,14 +58,15 @@ a primeira linha da saída diz qual foi usada.
 
 Detalhes em `{{REFERENCE}}`.
 
-- O índice responde **declaração**, não uso: `find_usages.ps1` é um `rg` com limite de palavra, agrupado
-  por arquivo, sobre **todo arquivo de texto** (`.config`, `.resx`, `.xaml`, `.sql` de migration, `.md`
-  incluídos — `-Include *.cs` restringe). Não existe índice de referências.
+- O índice responde **declaração**, não uso: `find_usages.ps1` é palavra inteira (literal, não regex) sobre o
+  **corpus** de todo arquivo de texto da worktree (`.config`, `.resx`, `.xaml`, `.sql` de migration, `.md`,
+  `.js`, `.csproj` incluídos — `-Include *.cs` restringe), agrupado por arquivo. Arquivo modificado sem commit
+  sai com o conteúdo atual. Não há semântica: é o que o `grep` acharia, sem varrer a árvore.
 - Código gerado sai do índice por padrão (`-IncludeGenerated` traz; a metade `*.Designer.cs` de um partial
   só aparece com ele).
 - ⚠️ **O LSP do plugin csharp-lsp NÃO indexa o workspace inteiro** — `findReferences` e `workspaceSymbol`
   são incompletos cross-project. Refactor entre projetos: `find_declarations` + `find_usages`, nunca LSP.
-- A primeira chamada ao `find_declarations` num checkout materializa o índice (40 a 70 s, uma vez por
-  máquina). Depois, 2 a 4 s quando há refresh (primeira chamada em 60 s, Edit/Write em `.cs` da worktree
-  ou index do git reescrito) e 0,3 s nas demais, que reusam o TSV. Edição por `sed`/script fora de
-  Edit/Write só entra quando a janela de 60 s vence.
+- A primeira chamada ao `find_declarations` ou ao `find_usages` num checkout materializa o índice (40 a 70 s,
+  uma vez por máquina) e o corpus (mais ~12 s). Depois, 2 a 4 s quando há refresh (primeira chamada em 60 s,
+  Edit/Write na worktree ou index do git reescrito) e 0,3 a 0,8 s nas demais, que reusam TSV, manifesto e
+  corpus. Edição por `sed`/script fora de Edit/Write só entra quando a janela de 60 s vence.
