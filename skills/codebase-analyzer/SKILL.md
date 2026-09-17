@@ -28,9 +28,9 @@ antes de agir e registra descobertas no notebook.
 - LSP: funciona dentro de 1 projeto. Cross-project: find_usages/Grep.
 - Pergunta estrutural em C# (declara, herda, atributo, membros, contagem
   por kind) → find_declarations.ps1 ANTES de Grep. O índice se atualiza
-  sozinho pelo git a cada chamada (2 a 4 s); não precisa reindexar.
-  Primeira chamada da sessão sem -NoRefresh; as seguintes com -NoRefresh
-  (0,6 s), enquanto não editar .cs.
+  sozinho quando algo mudou (2 a 4 s; as demais chamadas reusam o TSV em
+  0,3 s); não precisa reindexar nem de -NoRefresh. Editou .cs por sed ou
+  script, fora de Edit/Write? A consulta seguinte pode reusar por até 60 s.
 - Grep retornou >20 resultados? PARE. Regresse com files_with_matches,
   filtre por projeto, refine o pattern. Nunca generalize de 5 para 200.
 - Mesmo símbolo em 2+ projetos? NÃO leia nenhum ainda. Liste quais

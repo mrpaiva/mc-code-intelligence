@@ -5,15 +5,22 @@ namespace DeclIndex;
 
 public sealed record RefreshPhases(long GitMs, long ReadMs, long ParseMs, long MaterializeMs);
 
-public sealed record RefreshReport(int Files, int Parsed, int Invalidated, int BlobsRead, IReadOnlyList<string> ParseErrors, string TsvPath, TimeSpan Elapsed, RefreshPhases Phases);
+public sealed record RefreshReport(int Files, int Parsed, int Invalidated, int BlobsRead, IReadOnlyList<string> ParseErrors, string TsvPath, TimeSpan Elapsed, RefreshPhases Phases, bool Reused = false);
 
-/// <summary>Atualiza o índice de uma worktree: lista pelo git, parseia só o que falta no armazém e materializa se o manifesto mudou.</summary>
+/// <summary>Atualiza o índice de uma worktree: lista pelo git, parseia só o que falta no armazém e materializa se o manifesto mudou. Reusa o TSV sem git quando <see cref="Freshness"/> garante que nada mudou.</summary>
 public static class Refresh
 {
 	public static RefreshReport Run(string root, string storeRoot)
 	{
 		var stopwatch = Stopwatch.StartNew();
+		var startedUtc = DateTime.UtcNow;
 		root = Path.GetFullPath(root);
+
+		if (Freshness.IsFresh(storeRoot, root, startedUtc, out var stampedFiles))
+		{
+			return new RefreshReport(stampedFiles, 0, 0, 0, [], WorktreeIndex.TsvPathFor(storeRoot, root), stopwatch.Elapsed, new RefreshPhases(0, 0, 0, 0), Reused: true);
+		}
+
 		var store = new BlobStore(storeRoot);
 		var entries = GitWorktree.ListSources(root);
 		var gitMs = stopwatch.ElapsedMilliseconds;
@@ -55,6 +62,7 @@ public static class Refresh
 
 		var materializeMs = stopwatch.ElapsedMilliseconds - gitMs - readMs - parseMs;
 		var phases = new RefreshPhases(gitMs, readMs, parseMs, materializeMs);
+		Freshness.Stamp(storeRoot, root, startedUtc, entries.Count);
 
 		return new RefreshReport(entries.Count, missing.Count, invalidated ? 1 : 0, blobsRead, errors.OrderBy(error => error, StringComparer.Ordinal).ToList(), tsvPath, stopwatch.Elapsed, phases);
 	}

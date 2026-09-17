@@ -60,9 +60,10 @@ O índice não é grátis. Os números da mesma máquina:
 |---|---|
 | Primeira sessão em cada versão do plugin | compilar o DeclIndex: 10 a 20 s (mais o restore de pacotes na primeira vez) |
 | Primeira consulta num checkout | materializar o índice: 40 a 70 s (159 s numa máquina sob carga); um worktree novo parte do índice de outro e leva ~17 s |
-| Cada consulta sem `-NoRefresh` | 2 a 4 s, quase tudo `git status` em 23 mil arquivos |
-| Consulta com `-NoRefresh` | 0,6 s |
+| Consulta que precisa de refresh (primeira em 60 s, ou depois de Edit/Write num `.cs`, ou index do git reescrito) | 2 a 4 s, quase tudo `git status` em 23 mil arquivos |
+| Consulta com o TSV reusado (as demais) ou com `-NoRefresh` | 0,3 a 0,6 s |
 | Hook `PreToolUse`, por chamada de `Glob`/`Grep`/`Read`/`Bash`/`PowerShell` | 0,19 s no `DeclIndex.Hook.exe` pela cadeia do `bash` que o Claude Code usa; dentro do `DeclIndex.exe`, com o Roslyn no `deps.json`, custava 0,38 s; o hook Python anterior, 0,59 s |
+| Hook `PostToolUse`, por chamada de `Edit`/`Write`/`MultiEdit`/`NotebookEdit` | 0,2 s: só grava o marcador de edição da worktree |
 
 O índice é sintático: sabe quem **declara**, não quem **usa**. Overload, herança virtual e dispatch por
 reflexão não são resolvidos. Para uso, `find_usages`; para semântica dentro de um arquivo, o LSP.
@@ -71,9 +72,12 @@ reflexão não são resolvidos. Para uso, `find_usages`; para semântica dentro 
 
 Três peças, uma para cada pergunta:
 
-- **DeclIndex** (estrutura). Indexador sintático em C# (Roslyn, sem MSBuild). A cada consulta, `git ls-files`
+- **DeclIndex** (estrutura). Indexador sintático em C# (Roslyn, sem MSBuild). No refresh, `git ls-files`
   e `git status` dizem que arquivos mudaram; só os blobs novos são parseados, e o TSV do checkout é
-  rematerializado. O armazém é compartilhado entre worktrees: um worktree novo parte do índice de outro.
+  rematerializado. O refresh só acontece quando algo pode ter mudado: a cada 60 s, quando o hook
+  `PostToolUse` registrou Edit/Write na worktree, ou quando o index do git foi reescrito (checkout, pull,
+  stash, reset); fora disso a consulta reusa o TSV sem spawnar git. Edição por fora do agente (IDE, `sed`)
+  entra quando a janela vence. O armazém é compartilhado entre worktrees: um worktree novo parte do índice de outro.
   `find_declarations.ps1` consulta o TSV com `rg`.
 - **find_usages.ps1** (referência). `rg` com limite de palavra sobre todo arquivo de texto (`.cs`, `.config`,
   `.resx`, `.xaml`, `.sql`, `.md`), saída agrupada por arquivo. Não usa o índice: é o que torna seguro trocar

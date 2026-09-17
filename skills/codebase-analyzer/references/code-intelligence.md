@@ -45,8 +45,10 @@ Regras:
   `MultiVendasWeb` junto.
 - Código gerado (`Reference.cs`, `*.Designer.cs`, `GeneratedCode`) sai por padrão. A metade `*.Designer.cs` de
   um tipo parcial WinForms só aparece com `-IncludeGenerated`.
-- O índice se atualiza sozinho a cada chamada (2 a 4 s, quase tudo `git status`); `-NoRefresh` consulta o que
-  já está materializado em 0,5 s. A raiz é o ancestral do cwd com `Applications\` e `Components\` (checkout ou
+- O índice se atualiza sozinho quando algo pode ter mudado — primeira chamada em 60 s, Edit/Write num `.cs`
+  da worktree (marcador gravado pelo hook `PostToolUse`) ou index do git reescrito — e custa 2 a 4 s, quase
+  tudo `git status`; as demais chamadas reusam o TSV em 0,3 s. Edição por `sed`/script fora de Edit/Write só
+  entra quando a janela vence. `-NoRefresh` consulta o que já está materializado, sem checar nada. A raiz é o ancestral do cwd com `Applications\` e `Components\` (checkout ou
   worktree do `Code`); fora de um, `MC_CODE_ROOT`; sem os dois, erro. A primeira linha da saída diz qual usou;
   `-Root` prevalece. A primeira materialização de um checkout custa 40 a 70 s, uma vez por máquina.
 - Ele enxerga código dentro de `#if PAF` e afins (parseia com a união dos símbolos do repo); `Grep` também,

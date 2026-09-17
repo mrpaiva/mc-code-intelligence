@@ -2,15 +2,17 @@ using System.Text.Json;
 
 namespace DeclIndex.Hook;
 
-/// <summary>Payload que o Claude Code entrega ao hook PreToolUse pelo stdin: ferramenta, entrada e cwd da sessão.</summary>
+/// <summary>Payload que o Claude Code entrega ao hook pelo stdin: evento (PreToolUse/PostToolUse), ferramenta, entrada e cwd da sessão.</summary>
 public sealed class HookRequest
 {
+	public string HookEventName { get; }
 	public string ToolName { get; }
 	public JsonElement ToolInput { get; }
 	public string? Cwd { get; }
 
-	private HookRequest(string toolName, JsonElement toolInput, string? cwd)
+	private HookRequest(string hookEventName, string toolName, JsonElement toolInput, string? cwd)
 	{
+		HookEventName = hookEventName;
 		ToolName = toolName;
 		ToolInput = toolInput;
 		Cwd = cwd;
@@ -23,10 +25,11 @@ public sealed class HookRequest
 		{
 			using var document = JsonDocument.Parse(json);
 			var root = document.RootElement;
+			var hookEventName = root.TryGetProperty("hook_event_name", out var eventName) && eventName.ValueKind == JsonValueKind.String ? eventName.GetString()! : "";
 			var toolName = root.TryGetProperty("tool_name", out var name) && name.ValueKind == JsonValueKind.String ? name.GetString()! : "";
 			var toolInput = root.TryGetProperty("tool_input", out var input) && input.ValueKind == JsonValueKind.Object ? input.Clone() : EmptyObject();
 			var cwd = root.TryGetProperty("cwd", out var cwdElement) && cwdElement.ValueKind == JsonValueKind.String ? cwdElement.GetString() : null;
-			return new HookRequest(toolName, toolInput, cwd);
+			return new HookRequest(hookEventName, toolName, toolInput, cwd);
 		}
 		catch (JsonException)
 		{

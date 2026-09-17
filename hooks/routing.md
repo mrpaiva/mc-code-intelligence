@@ -1,7 +1,7 @@
 ## Ferramentas de inteligência de código (plugin mc-code-intelligence)
 
 O C# deste repositório está **indexado** (`DeclIndex`: Roslyn sintático, armazém compartilhado entre
-worktrees, refresh incremental por SHA de blob a cada chamada). Buscar em código é chamar o script
+worktrees, refresh incremental por SHA de blob quando algo mudou). Buscar em código é chamar o script
 certo; `Grep`, `grep`, `rg` e `Select-String` são a **exceção**, não a regra. O hook `PreToolUse` do plugin
 nega a busca crua quando um script cobria (na ferramenta `Grep`/`Glob` **e dentro de `Bash`/`PowerShell`**)
 e devolve o comando certo. Um `deny` do hook é política, não defeito: troque pelo comando que ele devolve.
@@ -66,4 +66,6 @@ Detalhes em `{{REFERENCE}}`.
 - ⚠️ **O LSP do plugin csharp-lsp NÃO indexa o workspace inteiro** — `findReferences` e `workspaceSymbol`
   são incompletos cross-project. Refactor entre projetos: `find_declarations` + `find_usages`, nunca LSP.
 - A primeira chamada ao `find_declarations` num checkout materializa o índice (40 a 70 s, uma vez por
-  máquina); depois, 2 a 4 s por refresh.
+  máquina). Depois, 2 a 4 s quando há refresh (primeira chamada em 60 s, Edit/Write em `.cs` da worktree
+  ou index do git reescrito) e 0,3 s nas demais, que reusam o TSV. Edição por `sed`/script fora de
+  Edit/Write só entra quando a janela de 60 s vence.

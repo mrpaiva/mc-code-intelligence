@@ -91,7 +91,8 @@ static int RunRefresh(string worktree, string store, bool quiet)
 	if (!quiet)
 	{
 		var phases = report.Phases;
-		Console.Error.WriteLine($"arquivos: {report.Files} | parseados: {report.Parsed} | blobs lidos: {report.BlobsRead} | invalidou: {report.Invalidated} | erros de parse: {report.ParseErrors.Count} | {report.Elapsed.TotalMilliseconds:N0} ms (git {phases.GitMs} + leitura {phases.ReadMs} + parse {phases.ParseMs} + materialização {phases.MaterializeMs})");
+		if (report.Reused) Console.Error.WriteLine($"arquivos: {report.Files} | TSV reusado (carimbo dentro de {Freshness.Window.TotalSeconds:N0} s, index do git igual, sem edição pelo agente) | {report.Elapsed.TotalMilliseconds:N0} ms");
+		else Console.Error.WriteLine($"arquivos: {report.Files} | parseados: {report.Parsed} | blobs lidos: {report.BlobsRead} | invalidou: {report.Invalidated} | erros de parse: {report.ParseErrors.Count} | {report.Elapsed.TotalMilliseconds:N0} ms (git {phases.GitMs} + leitura {phases.ReadMs} + parse {phases.ParseMs} + materialização {phases.MaterializeMs})");
 	}
 
 	Console.WriteLine(report.TsvPath);
