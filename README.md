@@ -77,8 +77,10 @@ Três peças, uma para cada pergunta:
   e `git status` dizem que arquivos mudaram; só os blobs novos são parseados, e o TSV do checkout é
   rematerializado. O refresh só acontece quando algo pode ter mudado: a cada 60 s, quando o hook
   `PostToolUse` registrou Edit/Write na worktree, ou quando o index do git foi reescrito (checkout, pull,
-  stash, reset); fora disso a consulta reusa o TSV sem spawnar git. Edição por fora do agente (IDE, `sed`)
-  entra quando a janela vence. O armazém é compartilhado entre worktrees: um worktree novo parte do índice de outro.
+  stash, reset); fora disso a consulta reusa o TSV sem spawnar git. Edição por fora do agente (IDE, `sed`,
+  script pelo Bash) entra quando a janela vence — aceito em 2026-09-17 como está: marcar sujo a partir do shell
+  custaria um refresh frio por comando que escreve, e a defasagem máxima é de 60 s. O armazém é compartilhado
+  entre worktrees: um worktree novo parte do índice de outro.
   `find_declarations.ps1` consulta o TSV com `rg`.
 - **find_usages.ps1** (referência). Palavra inteira sobre o **corpus**: o texto de todo arquivo da worktree
   (`.cs`, `.config`, `.resx`, `.xaml`, `.sql`, `.md`, `.js`, `.csproj`...), até 1 MB e não binário, guardado
