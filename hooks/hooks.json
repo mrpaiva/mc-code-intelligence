@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "e=\"${CLAUDE_PLUGIN_ROOT}/skills/codebase-analyzer/scripts/DeclIndex/DeclIndex/bin/Release/net10.0/DeclIndex.exe\"; [ -f \"$e\" ] && \"$e\" hook || true",
+            "command": "e=\"${CLAUDE_PLUGIN_ROOT}/skills/codebase-analyzer/scripts/DeclIndex/DeclIndex.Hook/bin/Release/net10.0/DeclIndex.Hook.exe\"; [ -f \"$e\" ] && \"$e\" || true",
             "timeout": 10
           }
         ]

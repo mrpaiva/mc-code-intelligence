@@ -4,8 +4,6 @@
 //                                                                    fatia para análise de serviços WCF: tipos (coluna
 //                                                                    extra "loaded" 1/0) e membros dos tipos carregados
 //   DeclIndex prune [--store <dir>]                                  remove blobs sem referência em manifesto algum
-//   DeclIndex hook                                                   PreToolUse do Claude Code: lê o payload JSON do stdin e
-//                                                                    escreve a decisão no stdout (ver Hook\CodeIntelligenceHook.cs)
 // Códigos de saída: 0 ok, 1 uso, 2 git falhou.
 
 using DeclIndex;
@@ -45,8 +43,6 @@ try
 			return RunClosure(worktree, store, scope, symbol, file, noRefresh);
 		case "prune":
 			return Prune(store);
-		case "hook":
-			return RunHook();
 		default:
 			return Usage();
 	}
@@ -102,28 +98,9 @@ static int RunRefresh(string worktree, string store, bool quiet)
 	return 0;
 }
 
-/// <summary>Nunca falha a ferramenta: payload ilegível ou exceção viram permissão (fail-open), como o hook Python.</summary>
-static int RunHook()
-{
-	var json = "{}";
-	try
-	{
-		var request = DeclIndex.Hook.HookRequest.Parse(Console.In.ReadToEnd());
-		if (request != null) json = DeclIndex.Hook.CodeIntelligenceHook.Decide(request, DeclIndex.Hook.HookEnvironment.FromProcess()).ToJson();
-	}
-	catch (Exception exception)
-	{
-		Console.Error.WriteLine($"hook: {exception.Message}");
-	}
-
-	using var output = new StreamWriter(Console.OpenStandardOutput(), new System.Text.UTF8Encoding(false));
-	output.Write(json);
-	return 0;
-}
-
 static int Usage()
 {
-	Console.Error.WriteLine("uso: DeclIndex refresh --worktree <raiz> [--store <dir>] [--quiet] | DeclIndex closure --worktree <raiz> (--scope <pasta> | --symbol <nome> | --file <arquivo>) [--no-refresh] | DeclIndex prune [--store <dir>] | DeclIndex hook");
+	Console.Error.WriteLine("uso: DeclIndex refresh --worktree <raiz> [--store <dir>] [--quiet] | DeclIndex closure --worktree <raiz> (--scope <pasta> | --symbol <nome> | --file <arquivo>) [--no-refresh] | DeclIndex prune [--store <dir>]");
 	return 1;
 }
 

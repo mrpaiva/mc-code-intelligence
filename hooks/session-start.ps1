@@ -31,10 +31,11 @@ $notes = @()
 
 # ---------- Build ----------
 $exe = Join-Path $scripts 'DeclIndex\DeclIndex\bin\Release\net10.0\DeclIndex.exe'
-if (-not (Test-Path $exe)) {
+$hookExe = Join-Path $scripts 'DeclIndex\DeclIndex.Hook\bin\Release\net10.0\DeclIndex.Hook.exe'
+if (-not (Test-Path $exe) -or -not (Test-Path $hookExe)) {
     if (Get-Command dotnet -ErrorAction SilentlyContinue) {
         $build = & dotnet build (Join-Path $scripts 'DeclIndex\DeclIndex.slnx') -c Release --nologo -v q 2>&1
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $exe)) {
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $exe) -or -not (Test-Path $hookExe)) {
             $reason = ($build | Select-Object -Last 3) -join ' '
             $notes += "> ⚠️ DeclIndex não compilou (``dotnet build`` em ``$scripts\DeclIndex``): $reason"
         }

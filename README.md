@@ -62,7 +62,7 @@ O índice não é grátis. Os números da mesma máquina:
 | Primeira consulta num checkout | materializar o índice: 40 a 70 s (159 s numa máquina sob carga); um worktree novo parte do índice de outro e leva ~17 s |
 | Cada consulta sem `-NoRefresh` | 2 a 4 s, quase tudo `git status` em 23 mil arquivos |
 | Consulta com `-NoRefresh` | 0,6 s |
-| Hook `PreToolUse`, por chamada de `Glob`/`Grep`/`Read`/`Bash`/`PowerShell` | 0,23 s no exe (0,44 s pela cadeia do `bash` que o Claude Code usa); o hook Python que ele substitui custava 0,40 s (0,59 s) |
+| Hook `PreToolUse`, por chamada de `Glob`/`Grep`/`Read`/`Bash`/`PowerShell` | 0,19 s no `DeclIndex.Hook.exe` pela cadeia do `bash` que o Claude Code usa; dentro do `DeclIndex.exe`, com o Roslyn no `deps.json`, custava 0,38 s; o hook Python anterior, 0,59 s |
 
 O índice é sintático: sabe quem **declara**, não quem **usa**. Overload, herança virtual e dispatch por
 reflexão não são resolvidos. Para uso, `find_usages`; para semântica dentro de um arquivo, o LSP.
@@ -83,8 +83,8 @@ Três peças, uma para cada pergunta:
 
 E a cola, em duas partes. No início de cada sessão aberta dentro de um checkout do `Code`, o plugin injeta
 no contexto do agente a tabela "pergunta → ferramenta" com os caminhos absolutos já resolvidos. E a cada
-chamada de `Glob`, `Grep`, `Read`, `Bash` ou `PowerShell`, o hook `PreToolUse` (o verbo `DeclIndex hook`,
-sem Python) aplica as regras: padrão com cara de declaração C# em alvo C# é negado com o comando exato do
+chamada de `Glob`, `Grep`, `Read`, `Bash` ou `PowerShell`, o hook `PreToolUse` (o `DeclIndex.Hook.exe`, um
+executável só com as regras, sem Roslyn e sem Python) aplica as regras: padrão com cara de declaração C# em alvo C# é negado com o comando exato do
 `find_declarations`; identificador puro em pasta com `.cs` é negado apontando os dois scripts; regex real,
 contexto (`-A/-B/-C`), `-i`, multiline ou arquivo único passam; `grep`, `rg`, `git grep`, `findstr` e
 `Select-String` dentro do shell seguem a mesma regra, e `find -name "*.cs"` segue a do `Glob`. Leitura

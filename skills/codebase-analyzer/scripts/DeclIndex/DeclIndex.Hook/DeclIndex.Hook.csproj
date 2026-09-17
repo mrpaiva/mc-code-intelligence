@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<!-- Exe próprio para o hook PreToolUse: roda a cada chamada de tool, e o startup do host .NET cresce com o
+	     deps.json — no DeclIndex.exe, o Roslyn custava ~0,15 s por chamada sem ser carregado. Sem dependências. -->
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<InvariantGlobalization>true</InvariantGlobalization>
+	</PropertyGroup>
+</Project>

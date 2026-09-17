@@ -19,5 +19,6 @@
 	</ItemGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\DeclIndex\DeclIndex.csproj" />
+		<ProjectReference Include="..\DeclIndex.Hook\DeclIndex.Hook.csproj" />
 	</ItemGroup>
 </Project>
