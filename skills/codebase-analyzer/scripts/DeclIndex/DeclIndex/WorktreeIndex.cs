@@ -26,11 +26,11 @@ public static class WorktreeIndex
 	public static void WriteManifest(string manifestPath, IReadOnlyList<SourceEntry> entries)
 		=> AtomicFile.WriteLines(manifestPath, entries.Select(ManifestLine));
 
-	/// <summary>Caminhos dos shas pedidos no manifesto da worktree — o mesmo conteúdo pode estar em mais de um arquivo.</summary>
-	public static Dictionary<string, List<string>> ReadManifest(string manifestPath, IReadOnlySet<string> shas)
+	/// <summary>Caminhos de cada sha do manifesto da worktree (só os pedidos, se houver lista) — o mesmo conteúdo pode estar em mais de um arquivo.</summary>
+	public static Dictionary<string, List<string>> ReadManifest(string manifestPath, IReadOnlySet<string>? shas = null)
 	{
 		var paths = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-		if (shas.Count == 0) return paths;
+		if (shas is { Count: 0 }) return paths;
 
 		foreach (var line in File.ReadLines(manifestPath))
 		{
@@ -38,7 +38,7 @@ public static class WorktreeIndex
 			if (tab < 0) continue;
 
 			var sha = line[..tab];
-			if (!shas.Contains(sha)) continue;
+			if (shas != null && !shas.Contains(sha)) continue;
 
 			if (!paths.TryGetValue(sha, out var list)) paths[sha] = list = [];
 

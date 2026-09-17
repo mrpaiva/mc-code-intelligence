@@ -23,6 +23,7 @@ public sealed class Corpus
 	private readonly string textPath;
 	private readonly string idsPath;
 	private readonly List<string> shaById = [];
+	private readonly List<int> linesById = [];
 	private readonly Dictionary<string, int> idBySha = new(StringComparer.Ordinal);
 	private long end;
 
@@ -38,6 +39,11 @@ public sealed class Corpus
 	public bool Contains(string sha) => idBySha.ContainsKey(sha);
 
 	public string ShaOf(int id) => shaById[id - 1];
+
+	/// <summary>Linhas do arquivo de origem (inclusive as vazias, que não estão no corpus); 0 para blob rejeitado.</summary>
+	public int LinesOf(int id) => linesById[id - 1];
+
+	public int IdOf(string sha) => idBySha[sha];
 
 	/// <summary>Acrescenta os blobs ainda ausentes; texto nulo (binário, grande) entra sem linhas para não ser relido. Devolve quantos entraram.</summary>
 	public int Append(IEnumerable<(string Sha, string? Text)> blobs)
@@ -72,6 +78,7 @@ public sealed class Corpus
 				register.Flush();
 
 				shaById.Add(sha);
+				linesById.Add(lines);
 				idBySha[sha] = id;
 				appended++;
 			}
@@ -199,6 +206,7 @@ public sealed class Corpus
 	private void Load()
 	{
 		shaById.Clear();
+		linesById.Clear();
 		idBySha.Clear();
 		end = 0;
 		if (!File.Exists(idsPath)) return;
@@ -209,6 +217,7 @@ public sealed class Corpus
 			if (columns.Length < 3) continue;
 
 			shaById.Add(columns[0]);
+			linesById.Add(int.Parse(columns[2]));
 			idBySha[columns[0]] = shaById.Count;
 			end = long.Parse(columns[1]);
 		}

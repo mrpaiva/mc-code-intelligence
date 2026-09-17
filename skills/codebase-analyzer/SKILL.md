@@ -84,6 +84,10 @@ e `Components\`); fora de um checkout, `MC_CODE_ROOT` ou `-Root`.
   → Grep se precisar regex ou contexto (-A/-B/-C)
   → find_declarations NÃO responde uso: índice é de declaração
 
+"Onde vive a lógica de X, em várias palavras?" / "Que arquivos falam de X e Y?"
+  → rank_files.ps1 <termo> <termo>... [-Top 20] [-Include *.cs]
+    (arquivos ranqueados por relevância; termo é palavra inteira, literal, sensível a caixa)
+
 "O que este método faz?"
   → Read com offset+limit nas linhas específicas
 

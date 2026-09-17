@@ -59,9 +59,9 @@ O índice não é grátis. Os números da mesma máquina:
 | Momento | Custo |
 |---|---|
 | Primeira sessão em cada versão do plugin | compilar o DeclIndex: 10 a 20 s (mais o restore de pacotes na primeira vez) |
-| Primeira consulta num checkout | materializar o índice: 40 a 70 s (159 s numa máquina sob carga); um worktree novo parte do índice de outro e leva ~17 s |
-| Consulta que precisa de refresh (primeira em 60 s, ou depois de Edit/Write num `.cs`, ou index do git reescrito) | 2 a 4 s, quase tudo `git status` em 23 mil arquivos |
-| Consulta com o TSV reusado (as demais) ou com `-NoRefresh` | 0,3 a 0,6 s |
+| Primeira consulta num checkout | materializar o índice: 40 a 70 s (159 s numa máquina sob carga), mais ~12 s para o corpus de texto (46 mil arquivos, 218 MB); um worktree novo parte do índice de outro e leva ~17 s |
+| Consulta que precisa de refresh (primeira em 60 s, ou depois de Edit/Write na worktree, ou index do git reescrito) | 2 a 4 s, quase tudo `git status` em 46 mil arquivos |
+| Consulta com TSV, manifesto e corpus reusados (as demais) ou com `-NoRefresh` | 0,3 a 0,6 s no `find_declarations`; 0,8 a 1,3 s no `find_usages` (0,2 a 0,4 s de busca, o resto é o host .NET subindo) |
 | Hook `PreToolUse`, por chamada de `Glob`/`Grep`/`Read`/`Bash`/`PowerShell` | 0,19 s no `DeclIndex.Hook.exe` pela cadeia do `bash` que o Claude Code usa; dentro do `DeclIndex.exe`, com o Roslyn no `deps.json`, custava 0,38 s; o hook Python anterior, 0,59 s |
 | Hook `PostToolUse`, por chamada de `Edit`/`Write`/`MultiEdit`/`NotebookEdit` | 0,2 s: só grava o marcador de edição da worktree |
 
@@ -86,6 +86,10 @@ Três peças, uma para cada pergunta:
   memória e traduz os acertos para os caminhos da worktree pelo manifesto, então arquivo modificado sem commit
   sai com o conteúdo atual. O que o `grep` da árvore acharia, ele acha — os mesmos 122 acertos de
   `FacilityRentController` em 0,6 s, contra 8,7 s do `rg` na árvore. Fora de um checkout, cai no `rg`.
+- **rank_files.ps1** (relevância). Os arquivos da worktree ranqueados por BM25 sobre vários termos, para "onde
+  vive a lógica de X" quando X são várias palavras e o `find_usages` devolveria centenas de arquivos sem ordem.
+  Mesmo corpus, mesmos `-Path` e `-Include`; k termos custam k varreduras (`Voucher Cancel Reschedule` em
+  0,5 a 0,9 s).
 - **summarize_file.ps1** (leitura). Head e tail de um arquivo, com busca por nome quando o caminho é
   desconhecido, para decidir se vale ler tudo.
 
@@ -156,6 +160,7 @@ $s = "$HOME\.claude\plugins\cache\mc-tools\mc-code-intelligence\<versão>\skills
 & "$s\find_declarations.ps1" -Container GuardService
 & "$s\find_declarations.ps1" -Kind method -File MultiClubes.Controller/Facilities/ -GroupBy container
 & "$s\find_usages.ps1" DefaultConnectionString -Include *.config
+& "$s\rank_files.ps1" Voucher Cancel Reschedule -Top 10 -Include *.cs
 & "$s\summarize_file.ps1" CouponLotRebusManager.cs
 ```
 

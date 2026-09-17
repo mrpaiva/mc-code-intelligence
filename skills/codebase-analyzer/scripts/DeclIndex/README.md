@@ -20,6 +20,8 @@ sozinho na primeira chamada se o executável não existir. Os testes de
 DeclIndex refresh --worktree <raiz> [--store <dir>] [--quiet]   atualiza índice, manifesto e corpus; imprime o caminho do TSV
 DeclIndex usages --worktree <raiz> --symbol <nome> [--scope <pasta>] [--include <glob>]... [--no-refresh]
                                                                  onde o símbolo aparece como palavra inteira (ver abaixo)
+DeclIndex search --worktree <raiz> --term <palavra>... [--top 20] [--scope <pasta>] [--include <glob>]... [--no-refresh]
+                                                                 arquivos ranqueados por BM25 sobre os termos (ver abaixo)
 DeclIndex closure --worktree <raiz> (--scope <pasta> | --symbol <nome> | --file <arquivo>) [--no-refresh]
                                                                  fatia para análise de serviços WCF (ver abaixo)
 DeclIndex prune [--store <dir>]                                  remove blobs e linhas do corpus sem referência em manifesto algum
@@ -38,6 +40,15 @@ restringe a uma pasta relativa, `--include` é glob como o `--glob` do rg (sem b
 barra o caminho inteiro), e as pastas `node_modules`, `bin`, `obj`, `dist`, `.git`, `packages`, `.vs`, `.vscode`
 e `publish` ficam de fora, como no rg da árvore que o script fazia. No `Code`, `Save` (3 339 acertos em 1 134
 arquivos) sai em ~0,4 s dentro do processo; o host .NET soma ~0,7 s a isso nesta máquina.
+
+### `search`: o que o `rank_files.ps1` consome
+
+Uma linha `caminho<TAB>score<TAB>termos casados<TAB>linhas` por arquivo, do mais relevante ao menos, até `--top`.
+Cada termo é varrido como no `usages` (palavra inteira, literal, sensível a caixa) e os arquivos da worktree que
+passam no filtro são ranqueados por BM25 (k1 = 1,2, b = 0,75): tf = linhas do blob com o termo, df = blobs com o
+termo, comprimento = linhas do arquivo (terceira coluna do `corpus.ids`), N e média sobre os blobs filtrados.
+Sem índice invertido: k termos custam k varreduras (~0,25 s cada no `Code`), e o filtro sobre os 46 mil caminhos
+custa ~0,1 s — `Voucher Cancel Reschedule` com `--include *.cs` fecha em 0,5 a 0,9 s dentro do processo.
 
 ### `closure`: a fatia que o `service_action_graph.ps1` consome
 
