@@ -6,9 +6,10 @@ namespace DeclIndex.Hook;
 /// PreToolUse: orienta o agente para a hierarquia de inteligência de código no Code (repositório cross-project,
 /// arquivos de até 5000+ linhas). Port do check_code_intelligence.py de 2026-09-14, mesmas regras:
 ///   Glob : curinga no nome + .cs → nega e aponta find_usages/LSP.
-///   Grep : padrão com cara de declaração C# em alvo C# → nega com o comando exato do find_declarations;
+///   Grep : arquivo único nomeado → permite, seja qual for o padrão (o find_usages só recebe pasta; grep, Read ou LSP
+///          são o caminho); padrão com cara de declaração C# em alvo C# → nega com o comando exato do find_declarations;
 ///          identificador puro em pasta com .cs → nega apontando find_declarations (declaração) e find_usages (uso);
-///          regex real, contexto, -i, multiline ou arquivo único → permite.
+///          regex real, contexto, -i ou multiline → permite.
 ///   Read : .cs sem limit e ≥ 2000 linhas, ou outro código sem limit e ≥ 500 → nega e aponta summarize_file/LSP.
 ///   Bash/PowerShell : grep, rg, git grep, findstr e Select-String seguem a regra do Grep; find -name e
 ///          Get-ChildItem -Recurse -Filter/-Include seguem a do Glob. Busca lendo de um pipe passa.
@@ -280,9 +281,14 @@ public static class CodeIntelligenceHook
 		return DirectoryHasCSharp(path);
 	}
 
-	/// <summary>Arquivo nomeado (com extensão e que não é uma pasta existente): o find_usages só recebe pasta, então a busca crua passa.</summary>
+	/// <summary>
+	/// Arquivo nomeado (com extensão, sem curinga e que não é uma pasta existente): o find_usages só recebe pasta, então a
+	/// busca crua passa. <c>pasta/*.cs</c> tem extensão mas é a pasta inteira — o shell ou o Select-String expandem.
+	/// </summary>
 	private static bool LooksLikeFile(string path, string? basePath)
 	{
+		if (path.IndexOfAny(['*', '?']) >= 0) return false;
+
 		return ExtensionOf(path).Length > 0 && !Directory.Exists(ResolvePath(path, basePath));
 	}
 
@@ -319,11 +325,13 @@ public static class CodeIntelligenceHook
 		var pattern = request.GetString("pattern") ?? "";
 		if (pattern.Length == 0 || !IsCSharpTarget(request)) return HookDecision.Allow;
 
+		// Arquivo único: o find_usages só recebe pasta; aqui Grep, Read ou LSP são o caminho, seja qual for o padrão.
+		if (LooksLikeFile(request.GetString("path") ?? "", request.Cwd)) return HookDecision.Allow;
+
 		var classified = ClassifyDeclaration(pattern);
 		if (classified != null) return DenyDeclaration("Grep", pattern, classified.Value.Description, classified.Value.Arguments, environment);
 
-		// Arquivo único: o find_usages só recebe pasta; aqui Grep, Read ou LSP são o caminho.
-		if (GrepNeedsRawSearch(request, pattern) || LooksLikeFile(request.GetString("path") ?? "", request.Cwd)) return HookDecision.Allow;
+		if (GrepNeedsRawSearch(request, pattern)) return HookDecision.Allow;
 
 		return DenyPlainSearch("Grep", pattern, environment);
 	}
@@ -363,11 +371,13 @@ public static class CodeIntelligenceHook
 			if (!ShellCommandParser.IsTreeSearch(name!, search.Paths, search.Recursive, segments[position].Piped, previousName, fedByXargs)) continue;
 			if (!ShellTargetIsCSharp(command, search.Paths, basePath)) continue;
 
+			// Só arquivos nomeados (sem pasta): o find_usages só recebe pasta; aqui grep, Read ou LSP são o caminho, seja qual for o padrão.
+			if (search.Paths.Count > 0 && search.Paths.All(path => LooksLikeFile(path, basePath))) continue;
+
 			var classified = ClassifyDeclaration(search.Pattern);
 			if (classified != null) return DenyDeclaration(name!, search.Pattern, classified.Value.Description, classified.Value.Arguments, environment);
 
-			// Só arquivos nomeados (sem pasta): o find_usages só recebe pasta; aqui grep, Read ou LSP são o caminho.
-			if (ShellCommandParser.SearchNeedsRawSearch(name!, arguments, search.Pattern) || (search.Paths.Count > 0 && search.Paths.All(path => LooksLikeFile(path, basePath)))) continue;
+			if (ShellCommandParser.SearchNeedsRawSearch(name!, arguments, search.Pattern)) continue;
 
 			return DenyPlainSearch(name!, search.Pattern, environment);
 		}

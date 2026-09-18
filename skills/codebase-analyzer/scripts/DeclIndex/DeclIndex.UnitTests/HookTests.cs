@@ -154,6 +154,19 @@ public class HookTests
 	}
 
 	[TestMethod]
+	public void Grep_de_declaração_num_arquivo_único_é_permitido()
+	{
+		Executar("Grep", Grep("class Foo", path: "Applications/X/Foo.cs")).Denied.Should().BeFalse();
+		Executar("Grep", Grep(": ServiceBase", path: "Applications/X/Foo.cs")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Grep_de_identificador_em_glob_de_pasta_não_é_arquivo_único_e_é_negado()
+	{
+		Executar("Grep", Grep("MemberController", path: "Applications/X/*.cs")).Denied.Should().BeTrue();
+	}
+
+	[TestMethod]
 	public void Grep_de_identificador_em_alvo_não_cs_é_permitido()
 	{
 		Executar("Grep", Grep("MemberController", glob: "*.ts")).Denied.Should().BeFalse();
@@ -232,6 +245,18 @@ public class HookTests
 	public void Grep_de_identificador_em_arquivo_cs_único_é_permitido()
 	{
 		Executar("Bash", Shell("grep -n \"MemberController\" Applications/X/Foo.cs")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Grep_de_declaração_em_arquivo_cs_único_é_permitido()
+	{
+		Executar("Bash", Shell("grep -n \"class Foo\" Applications/X/Foo.cs")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Grep_de_identificador_em_glob_de_pasta_cs_não_é_arquivo_único_e_é_negado()
+	{
+		Executar("Bash", Shell("grep -rn \"MemberController\" Applications/X/Sources/*.cs")).Denied.Should().BeTrue();
 	}
 
 	[TestMethod]
@@ -328,6 +353,15 @@ public class HookTests
 	public void Select_String_com_Path_cs_e_declaração_é_negado()
 	{
 		Executar("PowerShell", Shell("Select-String -Path \"Applications\\*.cs\" -Pattern \"class Foo\"")).Denied.Should().BeTrue();
+	}
+
+	[TestMethod]
+	public void Select_String_num_arquivo_cs_único_é_permitido_mesmo_com_cara_de_atributo()
+	{
+		// Padrão real de uma sessão: \[AsParameters\] era uso do atributo num parâmetro, não declaração de tipo.
+		var comando = "Select-String -Path Applications\\X\\Sources\\Foo.cs -Pattern \"MapGet|ListProductsRoute|\\[AsParameters\\]|Query\"";
+
+		Executar("PowerShell", Shell(comando)).Denied.Should().BeFalse();
 	}
 
 	[TestMethod]
