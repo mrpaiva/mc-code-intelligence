@@ -1,6 +1,6 @@
 {
   "name": "mc-code-intelligence",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Índice de declarações C# (DeclIndex), find_declarations/find_usages/summarize_file e roteamento de ferramentas injetado no início da sessão para o repositório Code do MultiClubes",
   "author": {
     "name": "Mauro Paiva"
