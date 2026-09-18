@@ -5,14 +5,17 @@ namespace DeclIndex.Hook;
 /// <summary>
 /// PreToolUse: orienta o agente para a hierarquia de inteligência de código no Code (repositório cross-project,
 /// arquivos de até 5000+ linhas). Port do check_code_intelligence.py de 2026-09-14, mesmas regras:
-///   Glob : curinga no nome + .cs → nega e aponta find_usages/LSP.
+///   Glob : curinga no nome + .cs → nega e aponta find_usages/LSP; sob pasta explícita abaixo de Applications\ ou
+///          Components\ é varredura de uma pasta, e passa.
 ///   Grep : arquivo único nomeado → permite, seja qual for o padrão (o find_usages só recebe pasta; grep, Read ou LSP
 ///          são o caminho); padrão com cara de declaração C# em alvo C# → nega com o comando exato do find_declarations;
 ///          identificador puro em pasta com .cs → nega apontando find_declarations (declaração) e find_usages (uso);
 ///          regex real, contexto, -i ou multiline → permite.
 ///   Read : .cs sem limit e ≥ 2000 linhas, ou outro código sem limit e ≥ 500 → nega e aponta summarize_file/LSP.
 ///   Bash/PowerShell : grep, rg, git grep, findstr e Select-String seguem a regra do Grep; find -name e
-///          Get-ChildItem -Recurse -Filter/-Include seguem a do Glob. Busca lendo de um pipe passa.
+///          Get-ChildItem -Recurse -Filter/-Include seguem a do Glob. Busca lendo de um pipe passa. F=caminho da
+///          própria linha resolve o $F do alvo; variável sem valor conhecido não tem alvo para julgar e passa;
+///          git grep padrão <rev> -- lê outro commit e passa.
 /// O hook só age dentro de um checkout do Code (ancestral com Applications\ e Components\) ou sob MC_HOOK_ROOTS.
 /// </summary>
 public static class CodeIntelligenceHook
@@ -115,7 +118,39 @@ public static class CodeIntelligenceHook
 	private static HookDecision HandleGlob(HookRequest request, HookEnvironment environment)
 	{
 		var pattern = request.GetString("pattern") ?? "";
-		return IsBroadCsGlob(pattern) ? DenyBroadGlob("Glob", pattern, environment) : HookDecision.Allow;
+		if (!IsBroadCsGlob(pattern)) return HookDecision.Allow;
+
+		// Sem path, a pasta de partida é o prefixo fixo do próprio pattern (Applications/X/Tests/**/*.cs).
+		var start = request.GetString("path") ?? GlobPrefix(pattern);
+		return ListingIsBounded(start, request.Cwd) ? HookDecision.Allow : DenyBroadGlob("Glob", pattern, environment);
+	}
+
+	/// <summary>Componentes do pattern antes do primeiro curinga: <c>Applications/X/**/*.cs</c> → <c>Applications/X</c>.</summary>
+	private static string GlobPrefix(string pattern)
+	{
+		var fixedParts = Regex.Split(pattern, @"[/\\]").TakeWhile(part => part.IndexOfAny(['*', '?', '[']) < 0).ToList();
+		return string.Join("/", fixedParts);
+	}
+
+	/// <summary>
+	/// Listagem sob caminho explícito abaixo de Applications\ ou Components\ (ou fora deles) é varredura de uma pasta, não a
+	/// varredura cross-project que a regra do Glob evita. Raiz, Applications\ e Components\ inteiros continuam amplos; variável
+	/// sem valor conhecido não dá para julgar e passa.
+	/// </summary>
+	public static bool ListingIsBounded(string start, string? basePath)
+	{
+		if (start.Length == 0) return false;
+		if (ShellCommandParser.HasVariable(start)) return true;
+
+		var resolved = NormalizeDirectory(ResolvePath(start, basePath));
+		var root = FindCodeAncestor(resolved);
+		if (root == null) return false;
+
+		var relative = resolved.Length > root.Length ? resolved.Substring(root.Length).Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) : "";
+		if (relative.Length == 0) return false;
+
+		var parts = relative.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
+		return parts.Length > 1 || !(parts[0].Equals("Applications", StringComparison.OrdinalIgnoreCase) || parts[0].Equals("Components", StringComparison.OrdinalIgnoreCase));
 	}
 
 	private static HookDecision DenyBroadGlob(string toolLabel, string pattern, HookEnvironment environment)
@@ -125,7 +160,8 @@ public static class CodeIntelligenceHook
 			"Hierarquia correta de code intelligence:\n" +
 			$"  • Símbolo ou texto específico  →  {Script(environment, "find_usages.ps1")} <símbolo>\n" +
 			"  • Estrutura de um .cs localizado  →  LSP documentSymbol\n" +
-			"  • Caminho exato desconhecido  →  Glob OK, ex: '**/ExactFile.cs'  (sem wildcard no nome)");
+			"  • Caminho exato desconhecido  →  Glob OK, ex: '**/ExactFile.cs'  (sem wildcard no nome)\n" +
+			"  • Arquivos de uma pasta específica  →  git ls-files <pasta>  (ou a listagem com a pasta explícita, abaixo de Applications\\ ou Components\\)");
 	}
 
 	// ---------- Padrões ----------
@@ -352,6 +388,7 @@ public static class CodeIntelligenceHook
 		}
 
 		var named = segments.Select(segment => ShellCommandParser.CommandName(segment.Tokens)).ToList();
+		var assignments = ShellCommandParser.Assignments(segments);
 
 		// `cd X && grep ...`: os caminhos do resto da linha são relativos a X.
 		var basePath = request.Cwd;
@@ -368,11 +405,18 @@ public static class CodeIntelligenceHook
 			var search = ShellCommandParser.ParseSearchArguments(name!, arguments);
 			var previousName = position > 0 ? named[position - 1].Name : null;
 			if (search.Pattern == null || search.Pattern.Length == 0) continue;
+			if (search.SearchesRevision) continue;
 			if (!ShellCommandParser.IsTreeSearch(name!, search.Paths, search.Recursive, segments[position].Piped, previousName, fedByXargs)) continue;
-			if (!ShellTargetIsCSharp(command, search.Paths, basePath)) continue;
+
+			// F=caminho da própria linha resolve; variável de $(...) ou de pipeline não, e sem valor não há alvo para julgar.
+			var paths = search.Paths.Select(path => ShellCommandParser.Resolve(path, assignments)).ToList();
+			if (paths.Count > 0 && paths.All(ShellCommandParser.HasVariable)) continue;
+			paths = paths.Where(path => !ShellCommandParser.HasVariable(path)).ToList();
+
+			if (!ShellTargetIsCSharp(command, paths, basePath)) continue;
 
 			// Só arquivos nomeados (sem pasta): o find_usages só recebe pasta; aqui grep, Read ou LSP são o caminho, seja qual for o padrão.
-			if (search.Paths.Count > 0 && search.Paths.All(path => LooksLikeFile(path, basePath))) continue;
+			if (paths.Count > 0 && paths.All(path => LooksLikeFile(path, basePath))) continue;
 
 			var classified = ClassifyDeclaration(search.Pattern);
 			if (classified != null) return DenyDeclaration(name!, search.Pattern, classified.Value.Description, classified.Value.Arguments, environment);
@@ -391,7 +435,10 @@ public static class CodeIntelligenceHook
 			if (position + 1 < named.Count && ShellCommandParser.IsSearchCommand(named[position + 1].Name)) continue;
 
 			var glob = ShellCommandParser.ListingGlob(name, arguments);
-			if (glob != null && IsBroadCsGlob(glob)) return DenyBroadGlob(name, glob, environment);
+			if (glob == null || !IsBroadCsGlob(glob)) continue;
+
+			var start = ShellCommandParser.Resolve(ShellCommandParser.ListingPath(name, arguments) ?? "", assignments);
+			if (!ListingIsBounded(start, basePath)) return DenyBroadGlob(name, glob, environment);
 		}
 
 		return HookDecision.Allow;

@@ -7,7 +7,8 @@ public sealed record ShellSegment(IReadOnlyList<string> Tokens, bool Piped);
 
 public sealed record ShellCommand(string? Name, IReadOnlyList<string> Arguments, bool FedByXargs);
 
-public sealed record SearchArguments(string? Pattern, IReadOnlyList<string> Paths, bool Recursive);
+/// <summary><paramref name="SearchesRevision"/>: <c>git grep padrão &lt;rev&gt; -- caminhos</c> lê a árvore de outro commit, não a worktree.</summary>
+public sealed record SearchArguments(string? Pattern, IReadOnlyList<string> Paths, bool Recursive, bool SearchesRevision = false);
 
 /// <summary>
 /// Lê uma linha de Bash/PowerShell como o shlex posix do hook Python: aspas, escapes, pontuação (| || &amp;&amp; ; &amp;)
@@ -36,6 +37,8 @@ public static class ShellCommandParser
 	private static readonly Regex ShortFlags = new(@"\A-[a-zA-Z]+\d*\z");
 	private static readonly Regex StarExtension = new(@"\*\.([A-Za-z0-9]+)");
 	private static readonly Regex TypeOption = new(@"(?:^|\s)(?:-t\s*|--type[= ]\s*)([A-Za-z0-9]+)");
+	private static readonly Regex BashAssignment = new(@"\A([A-Za-z_]\w*)=(.*)\z", RegexOptions.Singleline);
+	private static readonly Regex VariableReference = new(@"\$\{?([A-Za-z_]\w*)\}?");
 
 	/// <summary>Remove <c>2>/dev/null</c>, <c>> arquivo</c>, <c>&lt; arquivo</c> para o alvo do redirect não virar caminho.</summary>
 	public static string StripRedirections(string command) => Redirection.Replace(command, " ");
@@ -190,6 +193,7 @@ public static class ShellCommandParser
 		string? pattern = null;
 		var paths = new List<string>();
 		var recursive = name is "rg" or "git grep";
+		var searchesRevision = false;
 		var isSelectString = name is "select-string" or "sls";
 		var index = 0;
 
@@ -200,6 +204,13 @@ public static class ShellCommandParser
 
 			if (token == "--")
 			{
+				// git grep: o que ficou entre o padrão e o "--" é revisão (origin/develop), não caminho da worktree.
+				if (name == "git grep" && pattern != null && paths.Count > 0)
+				{
+					searchesRevision = true;
+					paths.Clear();
+				}
+
 				paths.AddRange(arguments.Skip(index + 1));
 				break;
 			}
@@ -267,7 +278,73 @@ public static class ShellCommandParser
 			index++;
 		}
 
-		return new SearchArguments(pattern, paths, recursive);
+		return new SearchArguments(pattern, paths, recursive, searchesRevision);
+	}
+
+	/// <summary>
+	/// Atribuições literais da própria linha: <c>F=caminho</c> no Bash e <c>$f = caminho</c> no PowerShell. Valor vindo de
+	/// <c>$(...)</c>, de outra variável ou de pipeline fica de fora — o hook não tem como conhecê-lo.
+	/// </summary>
+	public static Dictionary<string, string> Assignments(IReadOnlyList<ShellSegment> segments)
+	{
+		var assignments = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+		foreach (var segment in segments)
+		{
+			var tokens = segment.Tokens;
+			if (tokens.Count == 0) continue;
+
+			var bash = BashAssignment.Match(tokens[0]);
+			if (bash.Success && tokens.Count == 1) Assign(assignments, bash.Groups[1].Value, bash.Groups[2].Value);
+			else if (tokens.Count == 3 && tokens[1] == "=" && tokens[0].StartsWith('$') && tokens[0].Length > 1) Assign(assignments, tokens[0].Substring(1), tokens[2]);
+		}
+
+		return assignments;
+	}
+
+	private static void Assign(Dictionary<string, string> assignments, string name, string value)
+	{
+		if (value.Length == 0 || value.Contains('$') || value.Contains('`')) return;
+
+		assignments[name] = value;
+	}
+
+	/// <summary>Substitui <c>$F</c> e <c>${F}</c> pelos valores conhecidos; o que não tem valor fica como está.</summary>
+	public static string Resolve(string path, IReadOnlyDictionary<string, string> assignments)
+	{
+		return VariableReference.Replace(path, match => assignments.TryGetValue(match.Groups[1].Value, out var value) ? value : match.Value);
+	}
+
+	public static bool HasVariable(string path) => path.Contains('$');
+
+	/// <summary>Caminho de partida de uma listagem (find caminho ..., Get-ChildItem [-Path] caminho); null se não houver.</summary>
+	public static string? ListingPath(string name, IReadOnlyList<string> arguments)
+	{
+		if (name == "find")
+		{
+			var start = arguments.TakeWhile(token => !token.StartsWith('-') && token != "!" && token != "(").ToList();
+			return start.Count > 0 ? start[0] : null;
+		}
+
+		for (var index = 0; index < arguments.Count - 1; index++)
+		{
+			if (arguments[index].StartsWith("-pat", StringComparison.OrdinalIgnoreCase) || arguments[index].StartsWith("-lit", StringComparison.OrdinalIgnoreCase)) return arguments[index + 1];
+		}
+
+		for (var index = 0; index < arguments.Count; index++)
+		{
+			var token = arguments[index];
+			if (token.StartsWith('-'))
+			{
+				var lower = token.ToLowerInvariant();
+				if (lower.StartsWith("-fil") || lower.StartsWith("-inc") || lower.StartsWith("-exc")) index++;
+				continue;
+			}
+
+			if (!token.Contains('*')) return token;
+		}
+
+		return null;
 	}
 
 	/// <summary>Extensões pedidas explicitamente na linha inteira: <c>*.cs</c>, <c>--include=*.cs</c>, <c>-t cs</c>, <c>--type=cs</c>.</summary>

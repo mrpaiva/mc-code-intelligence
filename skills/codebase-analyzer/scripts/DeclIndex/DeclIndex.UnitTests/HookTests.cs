@@ -397,6 +397,102 @@ public class HookTests
 		Executar("PowerShell", Shell("Get-ChildItem -Recurse -Filter MemberController.cs")).Denied.Should().BeFalse();
 	}
 
+	// ---------- Variáveis da própria linha: F=caminho; grep ... $F é o idioma mais comum do agente ----------
+
+	[TestMethod]
+	public void Grep_de_declaração_em_arquivo_apontado_por_variável_da_própria_linha_é_permitido()
+	{
+		Executar("Bash", Shell("F=Applications/X/Sources/Foo.cs; wc -l $F; grep -n \"class Foo\" $F")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Grep_em_sql_apontado_por_variável_entre_aspas_não_é_alvo_cs_e_é_permitido()
+	{
+		Executar("Bash", Shell("F=\"Applications/X/Data/001. Create structure.sql\"; grep -n \"ADD CONSTRAINT FK_OrderItems_\" \"$F\"")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Grep_de_identificador_em_pasta_apontada_por_variável_da_própria_linha_é_negado()
+	{
+		Executar("Bash", Shell("D=Applications; grep -rn \"MemberController\" $D")).Denied.Should().BeTrue();
+	}
+
+	[TestMethod]
+	public void Grep_em_variável_vinda_de_substituição_de_comando_não_tem_alvo_julgável_e_é_permitido()
+	{
+		Executar("Bash", Shell("F=$(git ls-files | head -1); grep -n \"class Foo\" $F")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Select_String_em_variável_vinda_de_pipeline_não_tem_alvo_julgável_e_é_permitido()
+	{
+		var comando = "$f = git ls-files Components | Select-Object -First 1; Select-String -Path $f -Pattern \"ApiKey\"";
+
+		Executar("PowerShell", Shell(comando)).Denied.Should().BeFalse();
+	}
+
+	// ---------- git grep num ref: árvore de outro commit, fora do alcance do find_usages ----------
+
+	[TestMethod]
+	public void Git_grep_com_revisão_antes_do_separador_é_permitido()
+	{
+		Executar("Bash", Shell("git grep -l \"OrderController\" origin/develop -- 'Applications/X/Tests'")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Git_grep_com_separador_mas_sem_revisão_continua_sendo_busca_na_worktree_e_é_negado()
+	{
+		Executar("Bash", Shell("git grep -n \"MemberController\" -- Applications/")).Denied.Should().BeTrue();
+	}
+
+	// ---------- Listagem sob caminho explícito: varrer uma pasta específica não é a varredura cross-project que a regra do Glob evita ----------
+
+	[TestMethod]
+	public void Find_de_cs_sob_pasta_específica_é_permitido()
+	{
+		Executar("Bash", Shell("find Applications/X/Tests -name '*.cs' -not -path '*/obj/*' | sort")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Find_de_cs_sob_pasta_apontada_por_variável_é_permitido()
+	{
+		Executar("Bash", Shell("T=Applications/X/Tests; ls $T; find $T/Foo.UnitTests -name '*.cs'")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Find_de_cs_na_raiz_ou_em_Applications_inteiro_continua_negado()
+	{
+		Executar("Bash", Shell("find . -name '*.cs'")).Denied.Should().BeTrue();
+		Executar("Bash", Shell("find Applications -name '*.cs'")).Denied.Should().BeTrue();
+	}
+
+	[TestMethod]
+	public void Deny_do_find_amplo_aponta_o_git_ls_files_para_listar_uma_pasta()
+	{
+		Executar("Bash", Shell("find . -name '*.cs'")).Reason.Should().Contain("git ls-files");
+	}
+
+	[TestMethod]
+	public void Gci_recursivo_de_cs_sob_pasta_específica_é_permitido()
+	{
+		Executar("PowerShell", Shell("Get-ChildItem Applications/X/Sources -Recurse -Filter *.cs")).Denied.Should().BeFalse();
+		Executar("PowerShell", Shell("Get-ChildItem -Path Applications/X/Sources -Recurse -Include *.cs")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Glob_amplo_de_cs_sem_caminho_é_negado()
+	{
+		Executar("Glob", new Dictionary<string, object?> { ["pattern"] = "**/*.cs" }).Denied.Should().BeTrue();
+		Executar("Glob", new Dictionary<string, object?> { ["pattern"] = "Applications/**/*.cs" }).Denied.Should().BeTrue();
+	}
+
+	[TestMethod]
+	public void Glob_de_cs_sob_pasta_específica_é_permitido()
+	{
+		Executar("Glob", new Dictionary<string, object?> { ["pattern"] = "**/*.cs", ["path"] = "Applications/X/Tests" }).Denied.Should().BeFalse();
+		Executar("Glob", new Dictionary<string, object?> { ["pattern"] = "Applications/X/Tests/**/*.cs" }).Denied.Should().BeFalse();
+	}
+
 	// ---------- Diretório-alvo: sem filtro de extensão, só é C# se tiver .cs (varredura limitada) ----------
 
 	private sealed class Árvore : IDisposable
