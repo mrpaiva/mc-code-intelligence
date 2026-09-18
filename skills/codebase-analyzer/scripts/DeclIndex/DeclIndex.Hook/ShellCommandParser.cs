@@ -130,6 +130,17 @@ public static class ShellCommandParser
 				inWord = true;
 				index += 2;
 			}
+			else if ((character is '$' or '<' or '>') && index + 1 < command.Length && command[index + 1] == '(')
+			{
+				// Substituição de comando ($(...)) ou de processo (<(...), >(...)) é um único token opaco: o comando de
+				// dentro não vira padrão nem caminho do comando de fora — "-f <(git diff ...)" consumia só o "<(" e o
+				// "git" seguinte virava o padrão do grep.
+				var close = FindSubstitutionEnd(command, index + 2);
+				if (character != '$') Flush();
+				word.Append(character).Append("(...)");
+				inWord = true;
+				index = close + 1;
+			}
 			else if (char.IsWhiteSpace(character))
 			{
 				Flush();
@@ -155,6 +166,32 @@ public static class ShellCommandParser
 	}
 
 	private static bool IsPunctuation(char character) => character is '(' or ')' or ';' or '<' or '>' or '|' or '&';
+
+	/// <summary>Índice do ")" que fecha a substituição aberta antes de <paramref name="start"/>, pulando aninhamentos e aspas. Lança FormatException se não fecha.</summary>
+	private static int FindSubstitutionEnd(string command, int start)
+	{
+		var depth = 1;
+		var index = start;
+
+		while (index < command.Length)
+		{
+			var character = command[index];
+			if (character is '\'' or '"')
+			{
+				var close = command.IndexOf(character, index + 1);
+				if (close < 0) throw new FormatException("aspas sem fechar dentro de substituição");
+				index = close + 1;
+				continue;
+			}
+
+			if (character == '\\') { index += 2; continue; }
+			if (character == '(') depth++;
+			if (character == ')' && --depth == 0) return index;
+			index++;
+		}
+
+		throw new FormatException("substituição sem fechar");
+	}
 
 	/// <summary>Nome, argumentos e se veio de xargs, tirando os prefixos <c>rtk [proxy]</c> e <c>xargs [-flags]</c> e juntando <c>git grep</c>.</summary>
 	public static ShellCommand CommandName(IReadOnlyList<string> tokens)

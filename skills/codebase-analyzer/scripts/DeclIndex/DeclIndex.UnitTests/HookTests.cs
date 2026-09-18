@@ -431,6 +431,23 @@ public class HookTests
 		Executar("PowerShell", Shell(comando)).Denied.Should().BeFalse();
 	}
 
+	[TestMethod]
+	public void Substituição_de_processo_no_argumento_do_grep_é_opaca_e_não_vira_padrão_nem_caminho()
+	{
+		// Caso real: -f consumia o token "<(" e o comando interno vazava como padrão 'git' e caminhos inexistentes.
+		var comando = "git diff --name-only $(git merge-base HEAD origin/develop) origin/develop | grep -F -f <(git diff --name-only origin/develop...HEAD) || echo \"(nenhum)\"";
+
+		Executar("Bash", Shell(comando)).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Substituição_de_comando_é_um_token_só_e_o_grep_de_fora_continua_julgado()
+	{
+		ShellCommandParser.Tokenize("F=$(git ls-files | head -1); grep -f <(cat x) -rn \"MemberController\" Applications/")
+			.Should().ContainInOrder("F=$(...)", ";", "grep", "-f", "<(...)", "-rn", "MemberController", "Applications/");
+		Executar("Bash", Shell("grep -f <(cat x) -rn \"MemberController\" Applications/")).Denied.Should().BeTrue();
+	}
+
 	// ---------- git grep num ref: árvore de outro commit, fora do alcance do find_usages ----------
 
 	[TestMethod]
