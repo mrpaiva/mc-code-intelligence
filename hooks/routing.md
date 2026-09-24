@@ -15,7 +15,7 @@ a primeira linha da saída diz qual foi usada.
 
 | Pergunta | Ferramenta |
 |---|---|
-| Quem declara X? Quem herda de X? Quais tipos têm `[X]`? Que membros X tem? Quantos por projeto/pasta? | `& "{{SCRIPTS}}\find_declarations.ps1" -Name\|-Base\|-Attribute\|-Container\|-Kind\|-File\|-GroupBy` |
+| Quem declara X? Quem herda de X? Quais tipos têm `[X]`? Que membros X tem? Quantos por projeto/pasta? | `& "{{SCRIPTS}}\find_declarations.ps1" -Name\|-Base\|-Attribute\|-Container\|-Kind\|-File\|-GroupBy [-File <pasta/>] [-Project <projeto>]` — recorte por pasta ou projeto em vez de filtrar a saída: `-File Applications/MultiVendas/` é trecho do caminho (maiúsculas como no repositório; sem a barra final entra `MultiVendasPos`) e `-Project` é o nome exato |
 | Onde X é usado? Quem chama X? (C# e demais linguagens) | `& "{{SCRIPTS}}\find_usages.ps1" <símbolo> [-Path <pasta>] [-ShowLine]` — `-ShowLine` traz o texto de cada linha |
 | Onde vive a lógica de X, em várias palavras? Que arquivos falam de X e Y? | `& "{{SCRIPTS}}\rank_files.ps1" <termo> <termo>... [-Top 20] [-Include *.cs]` — ranqueado por relevância |
 | Estrutura de UM `.cs` | LSP `documentSymbol`, `goToDefinition`, `hover` |
