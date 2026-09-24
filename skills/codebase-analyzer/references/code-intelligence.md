@@ -25,7 +25,8 @@ Linguagem-agnóstica — vale para C#, SQL, JS/TS, .cshtml, .php:
   Dentro de um checkout consulta o corpus do DeclIndex (todo arquivo de texto da
   worktree, até 1 MB, compartilhado entre worktrees; ~0,6 s contra 5 a 9 s do rg na
   árvore); o símbolo é literal, não regex, e arquivo modificado sem commit sai com
-  o conteúdo atual. `-Include *.cs` restringe; `-Path` limita a uma pasta.
+  o conteúdo atual. `-Include *.cs` restringe; `-Path` limita a uma pasta; `-ShowLine`
+  traz o texto de cada linha (sem indentação, até 200 caracteres).
 - `& "<Base directory>\scripts\rank_files.ps1" <termo> <termo>...` — os arquivos
   da worktree ranqueados por relevância (BM25 sobre o mesmo corpus) para "onde
   vive a lógica de X" em várias palavras; `-Top`, `-Path` e `-Include` como acima.

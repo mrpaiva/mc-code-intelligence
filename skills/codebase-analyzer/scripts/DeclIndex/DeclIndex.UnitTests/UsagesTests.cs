@@ -49,6 +49,12 @@ public class UsagesTests
 		return Usages.Find(store, raiz, símbolo, escopo, inclusões);
 	}
 
+	private List<Usage> UsosComTexto(string símbolo, params string[] inclusões)
+	{
+		Refresh.Run(raiz, store);
+		return Usages.Find(store, raiz, símbolo, null, inclusões, withText: true);
+	}
+
 	[TestMethod]
 	public void Uso_em_cs_e_em_config_sai_por_caminho_e_linha_uma_vez_por_linha_e_fora_de_bin()
 		=> Usos("Total").Should().Equal(new Usage("App/A.cs", 1), new Usage("App/App.config", 1), new Usage("App/App.config", 3), new Usage("Lib/B.cs", 1), new Usage("Lib/C.cs", 1));
@@ -81,4 +87,36 @@ public class UsagesTests
 	[TestMethod]
 	public void Símbolo_ausente_não_acha_nada()
 		=> Usos("Inexistente").Should().BeEmpty();
+
+	[TestMethod]
+	public void Com_texto_cada_uso_traz_a_própria_linha_sem_espaços_nas_pontas()
+	{
+		File.WriteAllText(Path.Combine(raiz, "App", "View.xaml"), "<Grid>\n\t\t<Button Content=\"Confirmação\" AutomationProperties.AutomationId=\"Sale.Button.Confirm\" />  \r\n\n    <TextBox AutomationProperties.AutomationId=\"Sale.Input.Value\"/>\n</Grid>");
+
+		UsosComTexto("AutomationId", "*.xaml").Should().Equal(
+			new Usage("App/View.xaml", 2, "<Button Content=\"Confirmação\" AutomationProperties.AutomationId=\"Sale.Button.Confirm\" />"),
+			new Usage("App/View.xaml", 4, "<TextBox AutomationProperties.AutomationId=\"Sale.Input.Value\"/>"));
+	}
+
+	[TestMethod]
+	public void Linha_acima_de_200_caracteres_é_cortada_com_reticências_sem_partir_emoji()
+	{
+		var exata = "Total " + new string('x', 194);
+		var longa = "Total " + new string('y', 195);
+		var comEmoji = "Total " + new string('a', 193) + "😀 fim";
+		File.WriteAllText(Path.Combine(raiz, "Lib", "Longa.txt"), $"\t{exata}\n{longa}\n{comEmoji}");
+
+		UsosComTexto("Total", "Longa.txt").Select(uso => uso.Text).Should().Equal(exata, longa[..200] + "…", comEmoji[..199] + "…");
+	}
+
+	[TestMethod]
+	public void Com_ou_sem_texto_os_caminhos_e_as_linhas_são_os_mesmos_e_sem_pedir_não_vem_texto()
+	{
+		var semTexto = Usos("Total");
+		var comTexto = UsosComTexto("Total");
+
+		semTexto.Should().NotBeEmpty().And.OnlyContain(uso => uso.Text == null);
+		comTexto.Should().OnlyContain(uso => uso.Text != null);
+		comTexto.Select(uso => uso with { Text = null }).Should().Equal(semTexto);
+	}
 }

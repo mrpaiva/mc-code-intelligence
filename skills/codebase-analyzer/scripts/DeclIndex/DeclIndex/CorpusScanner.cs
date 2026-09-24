@@ -1,17 +1,19 @@
 using System.IO.MemoryMappedFiles;
+using System.Text;
 
 namespace DeclIndex;
 
 /// <summary>
 /// Varre o corpus mapeado em memória atrás do símbolo como palavra inteira (limite = não [A-Za-z0-9_] nem byte
 /// ≥ 0x80, que é acento em UTF-8), em fatias paralelas alinhadas em quebra de linha. Um acerto por linha, com o
-/// "id:linha:" lido do início dela; acerto dentro do próprio prefixo (símbolo numérico) é descartado.
+/// "id:linha:" lido do início dela (e o texto depois dele, quando pedido); acerto dentro do próprio prefixo
+/// (símbolo numérico) é descartado.
 /// </summary>
 public static unsafe class CorpusScanner
 {
 	private const long ChunkBytes = 8 << 20;
 
-	public static List<CorpusHit> Scan(MemoryMappedViewAccessor view, long length, byte[] needle)
+	public static List<CorpusHit> Scan(MemoryMappedViewAccessor view, long length, byte[] needle, bool withText = false)
 	{
 		byte* pointer = null;
 		view.SafeMemoryMappedViewHandle.AcquirePointer(ref pointer);
@@ -22,7 +24,7 @@ public static unsafe class CorpusScanner
 			var chunks = Chunks(data, length);
 			var hits = new List<CorpusHit>[chunks.Count];
 
-			Parallel.For(0, chunks.Count, index => hits[index] = ScanRange(data, chunks[index].From, chunks[index].To, needle));
+			Parallel.For(0, chunks.Count, index => hits[index] = ScanRange(data, chunks[index].From, chunks[index].To, needle, withText));
 
 			return hits.SelectMany(chunk => chunk).ToList();
 		}
@@ -56,7 +58,7 @@ public static unsafe class CorpusScanner
 		return newline < 0 ? length : position + newline + 1;
 	}
 
-	private static List<CorpusHit> ScanRange(nint data, long from, long to, byte[] needle)
+	private static List<CorpusHit> ScanRange(nint data, long from, long to, byte[] needle, bool withText)
 	{
 		var hits = new List<CorpusHit>();
 		var span = new ReadOnlySpan<byte>((byte*)data + from, checked((int)(to - from)));
@@ -72,24 +74,26 @@ public static unsafe class CorpusScanner
 			var before = start == 0 ? (byte)'\n' : span[start - 1];
 			var after = stop == span.Length ? (byte)'\n' : span[stop];
 
-			if (IsWord(before) || IsWord(after) || !TryReadPrefix(span, start, out var hit))
+			if (IsWord(before) || IsWord(after) || !TryReadPrefix(span, start, out var hit, out var textStart))
 			{
 				position = start + 1;
 				continue;
 			}
 
-			hits.Add(hit);
 			var newline = span[stop..].IndexOf((byte)'\n');
-			position = newline < 0 ? span.Length : stop + newline + 1;
+			var lineEnd = newline < 0 ? span.Length : stop + newline;
+			hits.Add(withText ? hit with { Text = Encoding.UTF8.GetString(span[textStart..lineEnd]) } : hit);
+			position = newline < 0 ? span.Length : lineEnd + 1;
 		}
 
 		return hits;
 	}
 
-	/// <summary>Lê "id:linha:" do início da linha que contém o acerto; falha se o acerto está dentro do prefixo.</summary>
-	private static bool TryReadPrefix(ReadOnlySpan<byte> span, int hitStart, out CorpusHit hit)
+	/// <summary>Lê "id:linha:" do início da linha que contém o acerto, e onde o texto começa; falha se o acerto está dentro do prefixo.</summary>
+	private static bool TryReadPrefix(ReadOnlySpan<byte> span, int hitStart, out CorpusHit hit, out int textStart)
 	{
 		hit = default!;
+		textStart = 0;
 		var lineStart = span[..hitStart].LastIndexOf((byte)'\n') + 1;
 		var prefix = span[lineStart..hitStart];
 		var first = prefix.IndexOf((byte)':');
@@ -101,6 +105,7 @@ public static unsafe class CorpusScanner
 		if (!TryParse(prefix[..first], out var id) || !TryParse(prefix.Slice(first + 1, second), out var line)) return false;
 
 		hit = new CorpusHit(id, line);
+		textStart = lineStart + first + 1 + second + 1;
 		return true;
 	}
 

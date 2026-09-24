@@ -18,7 +18,7 @@ sozinho na primeira chamada se o executável não existir. Os testes de
 
 ```
 DeclIndex refresh --worktree <raiz> [--store <dir>] [--quiet]   atualiza índice, manifesto e corpus; imprime o caminho do TSV
-DeclIndex usages --worktree <raiz> --symbol <nome> [--scope <pasta>] [--include <glob>]... [--no-refresh]
+DeclIndex usages --worktree <raiz> --symbol <nome> [--scope <pasta>] [--include <glob>]... [--no-refresh] [--show-line]
                                                                  onde o símbolo aparece como palavra inteira (ver abaixo)
 DeclIndex search --worktree <raiz> --term <palavra>... [--top 20] [--scope <pasta>] [--include <glob>]... [--no-refresh]
                                                                  arquivos ranqueados por BM25 sobre os termos (ver abaixo)
@@ -40,6 +40,11 @@ restringe a uma pasta relativa, `--include` é glob como o `--glob` do rg (sem b
 barra o caminho inteiro), e as pastas `node_modules`, `bin`, `obj`, `dist`, `.git`, `packages`, `.vs`, `.vscode`
 e `publish` ficam de fora, como no rg da árvore que o script fazia. No `Code`, `Save` (3 339 acertos em 1 134
 arquivos) sai em ~0,4 s dentro do processo; o host .NET soma ~0,7 s a isso nesta máquina.
+
+`--show-line` acrescenta uma terceira coluna, `caminho<TAB>linha<TAB>texto`: o texto da linha tirado do corpus
+(nada é relido do disco), sem espaços nas pontas e cortado em 200 caracteres com `…`; pode conter TAB, então é
+sempre a última coluna. O corte fica aqui e não no script: a linha de um `.js` minificado não atravessa o pipe, e o
+PowerShell só repassa os bytes, que chegam intactos mesmo sob console CP 850 (o `pwsh` chamado pelo Bash).
 
 ### `search`: o que o `rank_files.ps1` consome
 

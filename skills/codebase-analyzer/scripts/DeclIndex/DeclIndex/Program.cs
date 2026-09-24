@@ -1,8 +1,10 @@
 // Índice de declarações C# e corpus de texto do monorepo. Uso:
 //   DeclIndex refresh --worktree <raiz> [--store <dir>] [--quiet]   atualiza índice, manifesto e corpus; imprime o caminho do TSV
-//   DeclIndex usages --worktree <raiz> --symbol <nome> [--scope <pasta>] [--include <glob>]... [--no-refresh]
+//   DeclIndex usages --worktree <raiz> --symbol <nome> [--scope <pasta>] [--include <glob>]... [--no-refresh] [--show-line]
 //                                                                    onde o símbolo aparece como palavra inteira, em todo texto
-//                                                                    da worktree: uma linha "caminho<TAB>linha" por acerto
+//                                                                    da worktree: uma linha "caminho<TAB>linha" por acerto;
+//                                                                    --show-line acrescenta "<TAB>texto" (sem indentação, até 200
+//                                                                    caracteres + "…"; pode conter TAB, é sempre a última coluna)
 //   DeclIndex search --worktree <raiz> --term <palavra>... [--top 20] [--scope <pasta>] [--include <glob>]... [--no-refresh]
 //                                                                    arquivos ranqueados por BM25 sobre os termos (palavra inteira):
 //                                                                    "caminho<TAB>score<TAB>termos casados<TAB>linhas"
@@ -25,6 +27,7 @@ var terms = new List<string>();
 var top = 20;
 var quiet = false;
 var noRefresh = false;
+var showLine = false;
 var command = args.Length > 0 ? args[0] : "";
 
 for (var index = 1; index < args.Length; index++)
@@ -41,6 +44,7 @@ for (var index = 1; index < args.Length; index++)
 		case "--top": top = int.Parse(args[++index]); break;
 		case "--quiet": quiet = true; break;
 		case "--no-refresh": noRefresh = true; break;
+		case "--show-line": showLine = true; break;
 		default: return Usage();
 	}
 }
@@ -52,7 +56,7 @@ try
 		case "refresh" when worktree != null:
 			return RunRefresh(worktree, store, quiet);
 		case "usages" when worktree != null && symbol != null:
-			return RunUsages(worktree, store, symbol, scope, includes, noRefresh);
+			return RunUsages(worktree, store, symbol, scope, includes, noRefresh, showLine);
 		case "search" when worktree != null && terms.Count > 0:
 			return RunSearch(worktree, store, terms, top, scope, includes, noRefresh);
 		case "closure" when worktree != null && (scope != null || symbol != null || file != null):
@@ -69,7 +73,7 @@ catch (Exception exception) when (exception is GitException or IOException)
 	return 2;
 }
 
-static int RunUsages(string worktree, string store, string symbol, string? scope, List<string> includes, bool noRefresh)
+static int RunUsages(string worktree, string store, string symbol, string? scope, List<string> includes, bool noRefresh, bool showLine)
 {
 	var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 	var root = Path.GetFullPath(worktree);
@@ -80,10 +84,10 @@ static int RunUsages(string worktree, string store, string symbol, string? scope
 		foreach (var error in report.ParseErrors) Console.Error.WriteLine($"parse-error\t{error}");
 	}
 
-	var usages = Usages.Find(store, root, symbol, scope, includes);
+	var usages = Usages.Find(store, root, symbol, scope, includes, showLine);
 
 	using var output = new StreamWriter(Console.OpenStandardOutput(), new System.Text.UTF8Encoding(false)) { NewLine = "\n" };
-	foreach (var usage in usages) output.WriteLine($"{usage.Path}\t{usage.Line}");
+	foreach (var usage in usages) output.WriteLine(showLine ? $"{usage.Path}\t{usage.Line}\t{usage.Text}" : $"{usage.Path}\t{usage.Line}");
 
 	Console.Error.WriteLine($"usages: {usages.Count} referência(s) em {usages.Select(usage => usage.Path).Distinct().Count()} arquivo(s) | {stopwatch.ElapsedMilliseconds:N0} ms");
 	return 0;
@@ -157,7 +161,7 @@ static int RunRefresh(string worktree, string store, bool quiet)
 
 static int Usage()
 {
-	Console.Error.WriteLine("uso: DeclIndex refresh --worktree <raiz> [--store <dir>] [--quiet] | DeclIndex usages --worktree <raiz> --symbol <nome> [--scope <pasta>] [--include <glob>]... [--no-refresh] | DeclIndex search --worktree <raiz> --term <palavra>... [--top 20] [--scope <pasta>] [--include <glob>]... [--no-refresh] | DeclIndex closure --worktree <raiz> (--scope <pasta> | --symbol <nome> | --file <arquivo>) [--no-refresh] | DeclIndex prune [--store <dir>]");
+	Console.Error.WriteLine("uso: DeclIndex refresh --worktree <raiz> [--store <dir>] [--quiet] | DeclIndex usages --worktree <raiz> --symbol <nome> [--scope <pasta>] [--include <glob>]... [--no-refresh] [--show-line] | DeclIndex search --worktree <raiz> --term <palavra>... [--top 20] [--scope <pasta>] [--include <glob>]... [--no-refresh] | DeclIndex closure --worktree <raiz> (--scope <pasta> | --symbol <nome> | --file <arquivo>) [--no-refresh] | DeclIndex prune [--store <dir>]");
 	return 1;
 }
 

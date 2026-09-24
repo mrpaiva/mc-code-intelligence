@@ -11,11 +11,14 @@
     Restrinja com -Include quando o ruído incomodar (ex.: -Include *.cs) e com -Path para uma subpasta.
     As pastas node_modules, bin, obj, dist, .git, packages, .vs, .vscode e publish ficam de fora nos dois modos.
     -NoRefresh consulta o corpus e o manifesto já materializados sem passar pelo git (pode estar defasado).
+    -ShowLine traz o texto de cada linha ("linha 47: <texto>"), sem espaços nas pontas e cortado em 200
+    caracteres com "…" — para ver o valor sem abrir o arquivo (ex.: os AutomationId de um .xaml).
 .EXAMPLE
     .\find_usages.ps1 GetTotal
     .\find_usages.ps1 GetTotal -Path "Applications\MultiVendasPos"
     .\find_usages.ps1 IMemberService -Path "Components"
     .\find_usages.ps1 DefaultConnectionString -Include *.config
+    .\find_usages.ps1 AutomationId -Include *.xaml -ShowLine
 .NOTES
     A raiz é o ancestral mais próximo de -Path que tem Applications\ e Components\; sem -Path e fora de um
     checkout, vale $env:MC_CODE_ROOT. Os caminhos saem relativos à raiz, com barra normal.
@@ -31,10 +34,19 @@ param(
 
     [int]$Depth = 0,  # 0 = ilimitado (só o fallback Get-ChildItem)
 
-    [switch]$NoRefresh
+    [switch]$NoRefresh,
+
+    [switch]$ShowLine
 )
 
 . "$PSScriptRoot\CodeRoot.ps1"
+
+# O mesmo recorte do DeclIndex usages --show-line (Usages.Excerpt), para os fallbacks sem corpus.
+function Format-UsageText([string]$Text) {
+    $Text = $Text.Trim()
+    if ($Text.Length -le 200) { return $Text }
+    return $Text.Substring(0, 200) + "…"
+}
 
 # ---------- Validação ----------
 $resolvedPath = Resolve-Path $Path -ErrorAction SilentlyContinue
@@ -70,6 +82,7 @@ if ($root) {
     if ($scope) { $arguments += @("--scope", $scope) }
     foreach ($glob in $Include) { if ($glob -ne "*") { $arguments += @("--include", $glob) } }
     if ($NoRefresh) { $arguments += "--no-refresh" }
+    if ($ShowLine) { $arguments += "--show-line" }
 
     $lines = @(& $exe @arguments 2>$null)
     if ($LASTEXITCODE -ne 0) {
@@ -78,7 +91,11 @@ if ($root) {
     }
     foreach ($line in $lines) {
         $tab = $line.IndexOf("`t")
-        if ($tab -gt 0) { $results.Add([PSCustomObject]@{ File = $line.Substring(0, $tab); Line = [int]$line.Substring($tab + 1) }) }
+        if ($tab -le 0) { continue }
+
+        # Com --show-line vem uma terceira coluna, o texto já recortado (pode conter TAB; é sempre a última).
+        $number, $text = $line.Substring($tab + 1) -split "`t", 2
+        $results.Add([PSCustomObject]@{ File = $line.Substring(0, $tab); Line = [int]$number; Text = $text })
     }
 }
 elseif (Get-Command rg -ErrorAction SilentlyContinue) {
@@ -90,8 +107,9 @@ elseif (Get-Command rg -ErrorAction SilentlyContinue) {
     try {
         rg --word-regexp --fixed-strings --line-number --no-heading $Symbol @globs |
             ForEach-Object {
-                if ($_ -match '^(.+):(\d+):') {
-                    $results.Add([PSCustomObject]@{ File = $Matches[1]; Line = [int]$Matches[2] })
+                # Não guloso: o único ":" de um caminho no Windows é o do drive, sem dígitos depois; o texto da linha pode ter ":12:" (um horário).
+                if ($_ -match '^(.+?):(\d+):(.*)') {
+                    $results.Add([PSCustomObject]@{ File = $Matches[1]; Line = [int]$Matches[2]; Text = (Format-UsageText $Matches[3]) })
                 }
             }
     } finally {
@@ -113,7 +131,7 @@ else {
         Where-Object { $_.FullName -notmatch $excludePattern } |
         Select-String -Pattern "\b$([regex]::Escape($Symbol))\b" |
         ForEach-Object {
-            $results.Add([PSCustomObject]@{ File = $_.Path; Line = $_.LineNumber })
+            $results.Add([PSCustomObject]@{ File = $_.Path; Line = $_.LineNumber; Text = (Format-UsageText $_.Line) })
         }
 }
 
@@ -126,7 +144,10 @@ if ($results.Count -eq 0) {
 $results | Group-Object File | ForEach-Object {
     Write-Host ""
     Write-Host "=== $($_.Name) ==="
-    $_.Group | ForEach-Object { Write-Host "  linha $($_.Line)" }
+    $_.Group | ForEach-Object {
+        if ($ShowLine) { Write-Host "  linha $($_.Line): $($_.Text)" }
+        else { Write-Host "  linha $($_.Line)" }
+    }
 }
 
 $fileCount = ($results | Select-Object -ExpandProperty File -Unique | Measure-Object).Count

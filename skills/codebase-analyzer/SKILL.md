@@ -81,6 +81,8 @@ e `Components\`); fora de um checkout, `MC_CODE_ROOT` ou `-Root`.
 
 "Onde X é usado no monorepo?"
   → find_usages.ps1 <símbolo> (cross-project, agrupado por arquivo)
+  → -ShowLine traz o texto de cada linha (ex.: os valores de AutomationId
+    com -Include *.xaml), sem abrir arquivo por arquivo
   → Grep se precisar regex ou contexto (-A/-B/-C)
   → find_declarations NÃO responde uso: índice é de declaração
 

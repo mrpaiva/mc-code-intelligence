@@ -3,7 +3,8 @@ using System.Text;
 
 namespace DeclIndex;
 
-public sealed record CorpusHit(int Id, int Line);
+/// <summary>Acerto no corpus; <see cref="Text"/> é o texto integral da linha, preenchido só quando pedido.</summary>
+public sealed record CorpusHit(int Id, int Line, string? Text = null);
 
 /// <summary>
 /// Texto de todos os blobs já vistos, compartilhado entre worktrees e endereçado por SHA: corpus.txt tem uma
@@ -91,8 +92,8 @@ public sealed class Corpus
 		}
 	}
 
-	/// <summary>Linhas onde o símbolo aparece como palavra inteira, na ordem do corpus; uma por linha.</summary>
-	public List<CorpusHit> Search(string symbol)
+	/// <summary>Linhas onde o símbolo aparece como palavra inteira, na ordem do corpus; uma por linha. Com <paramref name="withText"/>, cada acerto traz o texto da linha.</summary>
+	public List<CorpusHit> Search(string symbol, bool withText = false)
 	{
 		if (end == 0 || symbol.Length == 0) return [];
 
@@ -102,7 +103,7 @@ public sealed class Corpus
 		using var map = MemoryMappedFile.CreateFromFile(file, null, 0, MemoryMappedFileAccess.Read, HandleInheritability.None, leaveOpen: false);
 		using var view = map.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
 
-		return CorpusScanner.Scan(view, end, Utf8SemBom.GetBytes(symbol));
+		return CorpusScanner.Scan(view, end, Utf8SemBom.GetBytes(symbol), withText);
 	}
 
 	/// <summary>Reescreve os dois arquivos só com os blobs referenciados, renumerando.</summary>

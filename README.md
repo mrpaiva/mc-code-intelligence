@@ -165,6 +165,7 @@ $s = "$HOME\.claude\plugins\cache\mc-tools\mc-code-intelligence\<versão>\skills
 & "$s\find_declarations.ps1" -Container GuardService
 & "$s\find_declarations.ps1" -Kind method -File MultiClubes.Controller/Facilities/ -GroupBy container
 & "$s\find_usages.ps1" DefaultConnectionString -Include *.config
+& "$s\find_usages.ps1" AutomationId -Include *.xaml -ShowLine   # com o texto de cada linha
 & "$s\rank_files.ps1" Voucher Cancel Reschedule -Top 10 -Include *.cs
 & "$s\summarize_file.ps1" CouponLotRebusManager.cs
 ```

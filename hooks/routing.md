@@ -16,7 +16,7 @@ a primeira linha da saída diz qual foi usada.
 | Pergunta | Ferramenta |
 |---|---|
 | Quem declara X? Quem herda de X? Quais tipos têm `[X]`? Que membros X tem? Quantos por projeto/pasta? | `& "{{SCRIPTS}}\find_declarations.ps1" -Name\|-Base\|-Attribute\|-Container\|-Kind\|-File\|-GroupBy` |
-| Onde X é usado? Quem chama X? (C# e demais linguagens) | `& "{{SCRIPTS}}\find_usages.ps1" <símbolo> [-Path <pasta>]` |
+| Onde X é usado? Quem chama X? (C# e demais linguagens) | `& "{{SCRIPTS}}\find_usages.ps1" <símbolo> [-Path <pasta>] [-ShowLine]` — `-ShowLine` traz o texto de cada linha |
 | Onde vive a lógica de X, em várias palavras? Que arquivos falam de X e Y? | `& "{{SCRIPTS}}\rank_files.ps1" <termo> <termo>... [-Top 20] [-Include *.cs]` — ranqueado por relevância |
 | Estrutura de UM `.cs` | LSP `documentSymbol`, `goToDefinition`, `hover` |
 | Preview de arquivo não-C# | `& "{{SCRIPTS}}\summarize_file.ps1" <caminho>` |
