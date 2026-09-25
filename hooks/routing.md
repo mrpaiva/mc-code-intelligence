@@ -18,14 +18,14 @@ a primeira linha da saída diz qual foi usada.
 | Quem declara X? Quem herda de X? Quais tipos têm `[X]`? Que membros X tem? Quantos por projeto/pasta? | `& "{{SCRIPTS}}\find_declarations.ps1" -Name\|-Base\|-Attribute\|-Container\|-Kind\|-File\|-GroupBy [-File <pasta/>] [-Project <projeto>]` — recorte por pasta ou projeto em vez de filtrar a saída: `-File Applications/MultiVendas/` é trecho do caminho (maiúsculas como no repositório; sem a barra final entra `MultiVendasPos`) e `-Project` é o nome exato |
 | Onde X é usado? Quem chama X? (C# e demais linguagens) | `& "{{SCRIPTS}}\find_usages.ps1" <símbolo> [-Path <pasta>] [-ShowLine]` — `-ShowLine` traz o texto de cada linha |
 | Onde vive a lógica de X, em várias palavras? Que arquivos falam de X e Y? | `& "{{SCRIPTS}}\rank_files.ps1" <termo> <termo>... [-Top 20] [-Include *.cs]` — ranqueado por relevância |
-| Estrutura de UM `.cs` | LSP `documentSymbol`, `goToDefinition`, `hover` |
+| Estrutura de UM `.cs` | `& "{{SCRIPTS}}\find_declarations.ps1" -File <caminho/do/arquivo.cs>` — classes, métodos e propriedades, com linha |
 | Preview de arquivo não-C# | `& "{{SCRIPTS}}\summarize_file.ps1" <caminho>` |
 | O que mudou | `git diff --name-only HEAD` |
 | Regex real, linhas de contexto (`-A/-B/-C`), `-i`, multiline, ou busca num arquivo único | `Grep`: a única exceção. Identificador puro em pasta com C# é negado pelo hook, no `Grep` e no Bash |
 
 ### Regra de uso
 1. Declaração → `find_declarations`; uso → `find_usages`. Antes de abrir qualquer arquivo.
-2. `summarize_file` (não-C#) ou LSP `documentSymbol` (C#) antes do `Read`, para decidir se vale ler tudo.
+2. `summarize_file` (não-C#) ou `find_declarations -File` (C#) antes do `Read`, para decidir se vale ler tudo.
 3. `git diff --name-only HEAD` no início de revisão ou depuração.
 4. Só leia arquivos completos quando as ferramentas acima não bastarem; `.cs` de 2000+ linhas nunca inteiro.
 5. Não confirme por leitura o que o índice já respondeu — é onde o custo sobe sem ganho.
@@ -43,17 +43,17 @@ a primeira linha da saída diz qual foi usada.
 **Debugging / investigação de bug**
 1. `git diff --name-only HEAD` → foca nos alterados recentemente
 2. `find_usages <termo>` → localiza comportamento
-3. `summarize_file` / `documentSymbol` nos candidatos → decide se vale leitura completa
+3. `summarize_file` / `find_declarations -File` nos candidatos → decide se vale leitura completa
 
 **Refatoração**
 1. `find_declarations -Name X` → definição
 2. `find_usages X` → usos
-3. `summarize_file` / `documentSymbol` nos arquivos de uso → contexto antes de mudar
+3. `summarize_file` / `find_declarations -File` nos arquivos de uso → contexto antes de mudar
 
 **Onboarding em código desconhecido**
 1. `git diff --name-only HEAD` → o que mudou recentemente
 2. `rank_files <conceito> <conceito>...` → os arquivos onde a lógica principal vive, do mais relevante ao menos; `find_usages <conceito>` quando é uma palavra só
-3. `summarize_file` / `documentSymbol` nos arquivos-chave → visão geral
+3. `summarize_file` / `find_declarations -File` nos arquivos-chave → visão geral
 
 ### Limites
 
@@ -65,8 +65,9 @@ Detalhes em `{{REFERENCE}}`.
   sai com o conteúdo atual. Não há semântica: é o que o `grep` acharia, sem varrer a árvore.
 - Código gerado sai do índice por padrão (`-IncludeGenerated` traz; a metade `*.Designer.cs` de um partial
   só aparece com ele).
-- ⚠️ **O LSP do plugin csharp-lsp NÃO indexa o workspace inteiro** — `findReferences` e `workspaceSymbol`
-  são incompletos cross-project. Refactor entre projetos: `find_declarations` + `find_usages`, nunca LSP.
+- ⚠️ **O LSP do plugin csharp-lsp carrega uma solution só**, escolhida por ele entre as dezenas sob a raiz da
+  sessão: arquivo fora dela volta vazio, e `findReferences`/`workspaceSymbol` são incompletos. Use
+  `find_declarations` + `find_usages`, nunca LSP.
 - A primeira chamada ao `find_declarations` ou ao `find_usages` num checkout materializa o índice (40 a 70 s,
   uma vez por máquina) e o corpus (mais ~12 s). Depois, 2 a 4 s quando há refresh (primeira chamada em 60 s,
   Edit/Write na worktree ou index do git reescrito) e 0,3 a 0,8 s nas demais, que reusam TSV, manifesto e

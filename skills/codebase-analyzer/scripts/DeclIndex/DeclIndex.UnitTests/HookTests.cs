@@ -504,6 +504,14 @@ public class HookTests
 	}
 
 	[TestMethod]
+	public void Glob_amplo_negado_aponta_as_declarações_do_arquivo_para_a_estrutura_de_um_cs()
+	{
+		var decisão = Executar("Glob", new Dictionary<string, object?> { ["pattern"] = "**/*.cs" });
+
+		decisão.Reason.Should().Contain("find_declarations.ps1\" -File <caminho/do/arquivo.cs>").And.NotContain("documentSymbol");
+	}
+
+	[TestMethod]
 	public void Glob_de_cs_sob_pasta_específica_é_permitido()
 	{
 		Executar("Glob", new Dictionary<string, object?> { ["pattern"] = "**/*.cs", ["path"] = "Applications/X/Tests" }).Denied.Should().BeFalse();
@@ -616,7 +624,7 @@ public class HookTests
 	// ---------- Read ----------
 
 	[TestMethod]
-	public void Read_de_cs_grande_sem_limit_é_negado_apontando_summarize_e_LSP()
+	public void Read_de_cs_grande_sem_limit_é_negado_apontando_summarize_e_as_declarações_do_arquivo()
 	{
 		var arquivo = Path.Combine(raiz, "Applications", "X", "Sources", "Grande.cs");
 		File.WriteAllLines(arquivo, Enumerable.Repeat("// linha", 2000));
@@ -624,7 +632,9 @@ public class HookTests
 		var decisão = Executar("Read", new Dictionary<string, object?> { ["file_path"] = arquivo });
 
 		decisão.Denied.Should().BeTrue();
-		decisão.Reason.Should().Contain("summarize_file.ps1").And.Contain("documentSymbol");
+		decisão.Reason.Should().Contain("summarize_file.ps1")
+			.And.Contain("find_declarations.ps1\" -File \"Applications/X/Sources/Grande.cs\" -IncludeGenerated", "entre aspas, porque há pastas com espaço (Connected Services), e com gerado, porque .cs enorme costuma ser Reference.cs ou Designer.cs")
+			.And.NotContain("documentSymbol", "o csharp-ls carrega uma solution só e não enxerga o resto do repositório");
 	}
 
 	[TestMethod]

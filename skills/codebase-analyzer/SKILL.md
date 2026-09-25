@@ -45,7 +45,7 @@ nem no PATH. A raiz do Code é inferida do diretório atual (ancestral com `Appl
 e `Components\`); fora de um checkout, `MC_CODE_ROOT` ou `-Root`.
 
 "Que API este arquivo expõe?"
-  → LSP documentSymbol (C#) ou summarize_file.ps1 (outros)
+  → find_declarations.ps1 -File <trecho do caminho> (C#) ou summarize_file.ps1 (outros)
 
 "Quem DECLARA X?" (declaração, não uso)
   → & "<Base directory>\scripts\find_declarations.ps1" -Name X [-Kind method,class] [-Project P]
@@ -127,7 +127,7 @@ Já leu 3+ arquivos nesta exploração?
 Mesmo nome definido em 2+ projetos, LSP lento ou incompleto, ou dúvida
 sobre qual ferramenta responde a pergunta?
   → leia references/code-intelligence.md (hierarquia completa, gate de
-    múltiplas definições, latência do LSP, fluxos por tipo de tarefa)
+    múltiplas definições, LSP numa solution só, fluxos por tipo de tarefa)
 
 ## Notebook
 

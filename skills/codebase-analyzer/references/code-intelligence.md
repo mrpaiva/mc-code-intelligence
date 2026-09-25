@@ -69,15 +69,10 @@ Medido no spike de 2026-09-11: "quem declara `Save`" caiu de 382 linhas (`Grep`,
 misturadas) para 89 exatas; membros de tipo parcial, de "achar 2 arquivos e ler 145 linhas" para 1 consulta;
 o join `*Action` sem fachada, de 20 s para 2,5 s.
 
-### Entender UM arquivo C# aberto (LSP cobre bem)
+### Entender UM arquivo C#
 
-| Operação | Quando usar |
-|---|---|
-| `documentSymbol` | "Que API o arquivo expõe?" — substitui `summarize_file.ps1` para C# |
-| `goToDefinition` | Navegar do uso para a definição (dentro do mesmo projeto) |
-| `hover` | Tipo/docs de um símbolo numa posição específica |
-| `goToImplementation` | Implementações de interface dentro do projeto |
-| `incomingCalls`/`outgoingCalls` | Cadeia de chamadas dentro do projeto |
+- `& "<Base directory>\scripts\find_declarations.ps1" -File <trecho do caminho>` — "que API o arquivo
+  expõe?": classes, métodos e propriedades, com linha e projeto. Substitui `summarize_file.ps1` para C#.
 
 ### Preview de arquivo grande (qualquer linguagem)
 
@@ -105,40 +100,38 @@ Métodos de extensão em C# são resolvidos em build-time pelo tipo
 declarado. Duas definições do mesmo método sobre tipos diferentes são
 **independentes**, mas parecem iguais em grep ou find_usages.
 
-## Latência do LSP
+## LSP: uma solution só
 
-Primeira chamada na sessão pode levar **~10-30s** (load do workspace).
-Após isso, fica em cache rápido.
-
-**Heurística:**
-- 3+ buscas estruturais em C# na mesma sessão → vale esperar o LSP carregar
-- Busca pontual única → `documentSymbol` ainda economiza tokens vs leitura completa, vale também
-- Qualquer busca cross-project → não tente o LSP, use `find_usages.ps1`/`Grep` direto
+O `csharp-ls` carrega **uma** solution, escolhida por ele entre as que acha sob a raiz da sessão; arquivo
+fora dela volta vazio em `documentSymbol`, `hover` e `goToDefinition`. Medido em 2026-09-25: a partir da raiz
+de um workspace com vários clones, 139 solutions encontradas e a escolhida (`Tools.slnx`, legada) nem abriu;
+com `--solution Kernel.slnx` explícito, o Kernel carregou. Não conte com ele: estrutura de arquivo pelo
+`find_declarations -File`, o resto pelo `find_declarations`/`find_usages`.
 
 ## Fluxos por tipo de tarefa
 
 ### Análise de impacto cross-project
 1. `find_usages.ps1 <símbolo>` → mapeia onde está usado em todos os projetos
-2. `LSP.documentSymbol` em cada arquivo de uso → contexto local sem ler tudo
+2. `find_declarations.ps1 -File` em cada arquivo de uso → contexto local sem ler tudo
 3. `Read` com offset nos call sites que precisam análise profunda
 4. Aplicar gate de múltiplas definições se aplicável
 
 ### Debugging
 1. `git diff --name-only HEAD` → arquivos mudados na sessão atual
 2. `find_usages.ps1` → localiza comportamento
-3. `LSP.documentSymbol` (C#) ou `summarize_file.ps1` (outros) → preview
+3. `find_declarations.ps1 -File` (C#) ou `summarize_file.ps1` (outros) → preview
 
 ### Refatoração em C#
 1. `find_usages.ps1 <símbolo>` → todos os usos (cross-project)
 2. `find_declarations.ps1 -Name <símbolo>` → todas as declarações (sobrecargas, partials, homônimos em
    outros projetos), antes do `LSP.goToDefinition`, que só vê o projeto atual
-3. `LSP.documentSymbol` nos arquivos de uso → contexto antes de mudar
+3. `find_declarations.ps1 -File` nos arquivos de uso → contexto antes de mudar
 4. Gate de múltiplas definições manual antes de mudar assinatura
 
 ### Onboarding em código desconhecido
 1. `git log --oneline -20` ou `git diff --name-only HEAD~10` → o que mudou
 2. `find_usages.ps1 <conceito>` ou `Grep "conceito"` → onde a lógica vive
-3. `LSP.documentSymbol` ou `summarize_file.ps1` → visão geral dos arquivos-chave
+3. `find_declarations.ps1 -File` ou `summarize_file.ps1` → visão geral dos arquivos-chave
 
 ## Setup técnico
 

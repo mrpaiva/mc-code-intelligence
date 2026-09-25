@@ -5,13 +5,13 @@ namespace DeclIndex.Hook;
 /// <summary>
 /// PreToolUse: orienta o agente para a hierarquia de inteligência de código no Code (repositório cross-project,
 /// arquivos de até 5000+ linhas). Port do check_code_intelligence.py de 2026-09-14, mesmas regras:
-///   Glob : curinga no nome + .cs → nega e aponta find_usages/LSP; sob pasta explícita abaixo de Applications\ ou
+///   Glob : curinga no nome + .cs → nega e aponta find_usages/find_declarations -File; sob pasta explícita abaixo de Applications\ ou
 ///          Components\ é varredura de uma pasta, e passa.
 ///   Grep : arquivo único nomeado → permite, seja qual for o padrão (o find_usages só recebe pasta; grep, Read ou LSP
 ///          são o caminho); padrão com cara de declaração C# em alvo C# → nega com o comando exato do find_declarations;
 ///          identificador puro em pasta com .cs → nega apontando find_declarations (declaração) e find_usages (uso);
 ///          regex real, contexto, -i ou multiline → permite.
-///   Read : .cs sem limit e ≥ 2000 linhas, ou outro código sem limit e ≥ 500 → nega e aponta summarize_file/LSP.
+///   Read : .cs sem limit e ≥ 2000 linhas, ou outro código sem limit e ≥ 500 → nega e aponta summarize_file/find_declarations -File.
 ///   Bash/PowerShell : grep, rg, git grep, findstr e Select-String seguem a regra do Grep; find -name e
 ///          Get-ChildItem -Recurse -Filter/-Include seguem a do Glob. Busca lendo de um pipe passa. F=caminho da
 ///          própria linha resolve o $F do alvo; variável sem valor conhecido não tem alvo para julgar e passa;
@@ -159,7 +159,7 @@ public static class CodeIntelligenceHook
 			$"{toolLabel} '{pattern}' sobre .cs é ineficaz neste repositório cross-project.\n" +
 			"Hierarquia correta de code intelligence:\n" +
 			$"  • Símbolo ou texto específico  →  {Script(environment, "find_usages.ps1")} <símbolo>\n" +
-			"  • Estrutura de um .cs localizado  →  LSP documentSymbol\n" +
+			$"  • Estrutura de um .cs localizado  →  {Script(environment, "find_declarations.ps1")} -File <caminho/do/arquivo.cs>\n" +
 			"  • Caminho exato desconhecido  →  Glob OK, ex: '**/ExactFile.cs'  (sem wildcard no nome)\n" +
 			"  • Arquivos de uma pasta específica  →  git ls-files <pasta>  (ou a listagem com a pasta explícita, abaixo de Applications\\ ou Components\\)");
 	}
@@ -477,7 +477,7 @@ public static class CodeIntelligenceHook
 				$"Arquivo C# com {lines} linhas: leitura integral desperdiça contexto.\n" +
 				"Alternativas em ordem:\n" +
 				$"  1. {Script(environment, "summarize_file.ps1")} \"{path}\"\n" +
-				"  2. LSP documentSymbol  (lista classes, métodos, propriedades)\n" +
+				$"  2. {Script(environment, "find_declarations.ps1")} -File \"{RelativeToCode(path)}\" -IncludeGenerated  (lista classes, métodos, propriedades)\n" +
 				"  3. Read com offset+limit  depois de identificar a região necessária");
 		}
 
@@ -486,6 +486,14 @@ public static class CodeIntelligenceHook
 			"Use:\n" +
 			$"  {Script(environment, "summarize_file.ps1")} \"{path}\"\n" +
 			"Depois Read com offset+limit na região necessária.");
+	}
+
+	/// <summary>O -File do find_declarations casa com trecho do caminho relativo ao checkout, com barra normal.</summary>
+	private static string RelativeToCode(string path)
+	{
+		var root = FindCodeAncestor(Path.GetDirectoryName(Path.GetFullPath(path)) ?? "");
+
+		return root == null ? Path.GetFileName(path) : Path.GetRelativePath(root, path).Replace('\\', '/');
 	}
 
 	private static int CountLines(string path)
