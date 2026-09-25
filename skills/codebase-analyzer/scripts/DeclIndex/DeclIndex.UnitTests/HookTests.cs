@@ -448,6 +448,40 @@ public class HookTests
 		Executar("Bash", Shell("grep -f <(cat x) -rn \"MemberController\" Applications/")).Denied.Should().BeTrue();
 	}
 
+	// ---------- Várias linhas e parênteses: cada linha é um comando, e o ")" fecha o comando ----------
+
+	[TestMethod]
+	public void Script_PowerShell_de_várias_linhas_não_cola_as_linhas_seguintes_no_Select_String()
+	{
+		// Caso real (25/09/2026): as linhas depois do "| Select-String" viravam caminhos dele (".Count", "Move-Item", "+")
+		// e o -Pattern da última linha virava o padrão.
+		var comando = string.Join("\n",
+			"$f = 'E:\\Repos\\Agents\\.wt-code-x\\bin\\Debug\\AppSettings.config'",
+			"\"Prefixos: \" + @(netsh http show servicestate view=requestq | Select-String 'MULTICLUBES/SERVICES').Count",
+			"Move-Item \"$f.original\" $f -Force",
+			"\"Restaurado: \" + ((Select-String -Path $f -Pattern 'Database=Dev_MultiClubes' | Measure-Object).Count -eq 1)");
+
+		Executar("PowerShell", Shell(comando)).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Grep_na_segunda_linha_do_comando_é_julgado()
+	{
+		Executar("Bash", Shell("echo inicio\ngrep -rn \"class MemberController\" Applications/")).Denied.Should().BeTrue();
+	}
+
+	[TestMethod]
+	public void Pipe_no_fim_da_linha_continua_o_comando_na_linha_seguinte()
+	{
+		Executar("Bash", Shell("cat Foo.cs |\nrg \"class Foo\"")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Parêntese_fecha_o_comando_e_o_acesso_a_membro_não_vira_caminho()
+	{
+		Executar("PowerShell", Shell("@(netsh http show servicestate view=requestq | Select-String 'MULTICLUBES/SERVICES').Count")).Denied.Should().BeFalse();
+	}
+
 	// ---------- git grep num ref: árvore de outro commit, fora do alcance do find_usages ----------
 
 	[TestMethod]
@@ -619,6 +653,16 @@ public class HookTests
 	public void Caminho_inexistente_é_tratado_como_código()
 	{
 		Executar("Bash", Shell("grep -rn \"TODO\" pasta/que/nao/existe/")).Denied.Should().BeTrue();
+	}
+
+	[TestMethod]
+	public void Caminho_inexistente_fora_de_um_checkout_do_Code_não_é_código()
+	{
+		// Caso real (25/09/2026): "C:/Users/<u>/.claude/scripts", que não existe, negou um grep em pastas de configuração.
+		using var árvore = new Árvore();
+		var inexistente = Path.Combine(árvore.Root, "scripts").Replace('\\', '/');
+
+		Executar("Bash", Shell($"grep -rl -e \"em comando Bash\" \"{inexistente}\""), cwd: árvore.Root).Denied.Should().BeFalse();
 	}
 
 	// ---------- Read ----------

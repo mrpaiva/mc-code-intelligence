@@ -268,12 +268,13 @@ public static class CodeIntelligenceHook
 	}
 
 	/// <summary>
-	/// Verdadeiro se houver algum .cs até maxDepth níveis. Diretório inexistente ou árvore grande demais para decidir
-	/// dentro do teto de entradas contam como código: é onde o grep cru mais custa.
+	/// Verdadeiro se houver algum .cs até maxDepth níveis. Árvore grande demais para decidir dentro do teto de entradas
+	/// conta como código: é onde o grep cru mais custa. Diretório inexistente conta como código só dentro de um checkout
+	/// do Code; fora dele não há o que o find_usages cubra.
 	/// </summary>
 	public static bool DirectoryHasCSharp(string directory, int maxDepth = 4, int maxEntries = 3000)
 	{
-		if (!Directory.Exists(directory)) return true;
+		if (!Directory.Exists(directory)) return FindCodeAncestor(NormalizeDirectory(directory)) != null;
 
 		var pending = new Stack<(string Path, int Depth)>();
 		pending.Push((directory, 0));

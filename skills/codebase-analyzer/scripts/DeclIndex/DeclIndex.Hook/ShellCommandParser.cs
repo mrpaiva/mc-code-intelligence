@@ -23,6 +23,9 @@ public static class ShellCommandParser
 
 	private static readonly HashSet<string> SegmentBreaks = new(StringComparer.Ordinal) { "|", "||", "&&", ";", "&" };
 
+	/// <summary>Token da quebra de linha: no Bash e no PowerShell cada linha é um comando.</summary>
+	public const string NewLine = "\n";
+
 	/// <summary>Opções de grep/rg que consomem o token seguinte; o resto é switch (-r fica switch, como no grep).</summary>
 	private static readonly HashSet<string> SearchOptionsWithValue = new(StringComparer.Ordinal)
 	{
@@ -43,7 +46,11 @@ public static class ShellCommandParser
 	/// <summary>Remove <c>2>/dev/null</c>, <c>> arquivo</c>, <c>&lt; arquivo</c> para o alvo do redirect não virar caminho.</summary>
 	public static string StripRedirections(string command) => Redirection.Replace(command, " ");
 
-	/// <summary>Divide a linha em segmentos (por |, ||, &amp;&amp;, ;, &amp;) já tokenizados. Lança FormatException se as aspas não fecham.</summary>
+	/// <summary>
+	/// Divide a linha em segmentos (por |, ||, &amp;&amp;, ;, &amp;, quebra de linha e ")") já tokenizados. O ")" fecha o comando, e o
+	/// que vem depois (o ".Count" de <c>(... | Select-String x).Count</c>) não é argumento dele. Quebra de linha logo depois de
+	/// |, || ou &amp;&amp; continua o comando na linha seguinte. Lança FormatException se as aspas não fecham.
+	/// </summary>
 	public static List<ShellSegment> SplitSegments(string command)
 	{
 		var segments = new List<ShellSegment>();
@@ -52,13 +59,21 @@ public static class ShellCommandParser
 
 		foreach (var token in Tokenize(StripRedirections(command)))
 		{
-			if (SegmentBreaks.Contains(token))
+			if (token == NewLine || IsRunOf(token, ')'))
+			{
+				if (current.Count == 0) continue;
+
+				segments.Add(new ShellSegment(current, piped));
+				current = new List<string>();
+				piped = false;
+			}
+			else if (SegmentBreaks.Contains(token))
 			{
 				if (current.Count > 0) segments.Add(new ShellSegment(current, piped));
 				current = new List<string>();
 				piped = token == "|";
 			}
-			else if (token != "(" && token != ")")
+			else if (!IsRunOf(token, '('))
 			{
 				current.Add(token);
 			}
@@ -68,7 +83,12 @@ public static class ShellCommandParser
 		return segments;
 	}
 
-	/// <summary>Tokenizador no modo posix do shlex com punctuation_chars: aspas somem, \ escapa, ();&lt;&gt;|&amp; viram tokens próprios.</summary>
+	private static bool IsRunOf(string token, char character) => token.Length > 0 && token.All(item => item == character);
+
+	/// <summary>
+	/// Tokenizador no modo posix do shlex com punctuation_chars: aspas somem, \ escapa, ();&lt;&gt;|&amp; viram tokens próprios e
+	/// a quebra de linha fora das aspas vira o token <see cref="NewLine"/>.
+	/// </summary>
 	public static List<string> Tokenize(string command)
 	{
 		var tokens = new List<string>();
@@ -144,6 +164,7 @@ public static class ShellCommandParser
 			else if (char.IsWhiteSpace(character))
 			{
 				Flush();
+				if (character == '\n') tokens.Add(NewLine);
 				index++;
 			}
 			else if (IsPunctuation(character))
