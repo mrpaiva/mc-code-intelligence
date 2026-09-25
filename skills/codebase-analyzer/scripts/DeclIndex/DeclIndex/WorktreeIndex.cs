@@ -81,7 +81,7 @@ public static class WorktreeIndex
 
 		foreach (var entry in entries)
 		{
-			lines.AddRange(reusable.TryGetValue(entry.RelativePath, out var reused) ? reused : fresh[entry.RelativePath]);
+			lines.AddRange(reusable.TryGetValue(entry.RelativePath, out var reused) ? WithProject(reused, projects.ProjectOf(entry.RelativePath)) : fresh[entry.RelativePath]);
 		}
 
 		AtomicFile.WriteLines(tsvPath, lines);
@@ -110,6 +110,20 @@ public static class WorktreeIndex
 		}
 
 		return reusable;
+	}
+
+	/// <summary>
+	/// A semente pode ser outra worktree, em outro branch, ou a própria antes de um csproj mudar: o sha igual garante as
+	/// declarações, não o projeto. O projeto (última coluna) é sempre o desta árvore.
+	/// </summary>
+	private static IEnumerable<string> WithProject(List<string> lines, string project)
+	{
+		foreach (var line in lines)
+		{
+			var start = line.LastIndexOf('\t') + 1;
+
+			yield return line.AsSpan(start).SequenceEqual(project) ? line : string.Concat(line.AsSpan(0, start), project);
+		}
 	}
 
 	private static string ColumnAt(string line, int index)

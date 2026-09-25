@@ -131,6 +131,41 @@ public class RefreshTests
 	}
 
 	[TestMethod]
+	public void Worktree_nova_semeada_por_outra_recebe_o_projeto_da_própria_árvore()
+	{
+		Refresh.Run(raiz, store);
+		var segunda = Path.Combine(Path.GetTempPath(), "declindex-clone-" + Guid.NewGuid().ToString("N"));
+		Git("clone", "-q", raiz, segunda);
+
+		try
+		{
+			File.Move(Path.Combine(segunda, "App", "App.csproj"), Path.Combine(segunda, "App", "Renomeado.csproj"));
+
+			var relatório = Refresh.Run(segunda, store);
+
+			relatório.BlobsRead.Should().Be(0, "os .cs têm o mesmo conteúdo da primeira worktree");
+			File.ReadAllLines(relatório.TsvPath).Skip(1).Should().OnlyContain(l => l.EndsWith("\tRenomeado"));
+		}
+		finally
+		{
+			ApagarÁrvore(segunda);
+		}
+	}
+
+	[TestMethod]
+	public void Linhas_reaproveitadas_do_próprio_TSV_recebem_o_csproj_atual()
+	{
+		Refresh.Run(raiz, store);
+		File.Move(Path.Combine(raiz, "App", "App.csproj"), Path.Combine(raiz, "App", "Renomeado.csproj"));
+		File.WriteAllText(Path.Combine(raiz, "App", "C.cs"), "class C { }");
+		MarcarEdição();
+
+		var linhas = LerÍndice();
+
+		linhas.Skip(1).Should().OnlyContain(l => l.EndsWith("\tRenomeado"));
+	}
+
+	[TestMethod]
 	public void Materialização_incremental_troca_só_as_linhas_do_arquivo_que_mudou_e_mantém_a_ordem()
 	{
 		Refresh.Run(raiz, store);
