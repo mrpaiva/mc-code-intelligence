@@ -77,17 +77,19 @@ public static class GitWorktree
 
 		using var process = Process.Start(info) ?? throw new GitException("não foi possível iniciar o git");
 
+		// Leitura antes da escrita: o hash-object --stdin-paths responde enquanto lê, e com o pipe de saída cheio para de ler o stdin.
+		var output = process.StandardOutput.ReadToEndAsync();
+		var error = process.StandardError.ReadToEndAsync();
+
 		if (input != null)
 		{
 			process.StandardInput.Write(input);
 			process.StandardInput.Close();
 		}
 
-		var output = process.StandardOutput.ReadToEnd();
-		var error = process.StandardError.ReadToEnd();
 		process.WaitForExit();
-		if (process.ExitCode != 0) throw new GitException($"git {arguments[0]} falhou em {root}: {error.Trim()}");
+		if (process.ExitCode != 0) throw new GitException($"git {arguments[0]} falhou em {root}: {error.Result.Trim()}");
 
-		return output;
+		return output.Result;
 	}
 }

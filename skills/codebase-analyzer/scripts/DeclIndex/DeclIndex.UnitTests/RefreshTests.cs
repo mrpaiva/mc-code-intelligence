@@ -196,6 +196,19 @@ public class RefreshTests
 	}
 
 	[TestMethod]
+	public void Centenas_de_arquivos_sujos_não_travam_o_hash_object()
+	{
+		Refresh.Run(raiz, store);
+		for (var i = 0; i < 1000; i++) File.WriteAllText(Path.Combine(raiz, "App", $"Arquivo_sujo_{i:D4}.cs"), $"class Sujo{i:D4} {{ }}");
+		MarcarEdição();
+
+		var refresh = Task.Run(() => Refresh.Run(raiz, store));
+
+		refresh.Wait(TimeSpan.FromSeconds(60)).Should().BeTrue("o git grava um hash por caminho enquanto lê o stdin; sem ler a saída junto, os dois pipes enchem e ninguém anda");
+		File.ReadAllLines(refresh.Result.TsvPath).Should().Contain(l => l.StartsWith("class\tSujo0999\t"));
+	}
+
+	[TestMethod]
 	public void Texto_que_não_é_cs_entra_no_manifesto_e_no_corpus_mas_não_no_TSV()
 	{
 		var relatório = Refresh.Run(raiz, store);
