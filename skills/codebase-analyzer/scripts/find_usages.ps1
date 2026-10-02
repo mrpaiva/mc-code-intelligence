@@ -21,7 +21,8 @@
     .\find_usages.ps1 AutomationId -Include *.xaml -ShowLine
 .NOTES
     A raiz é o ancestral mais próximo de -Path que tem Applications\ e Components\; sem -Path e fora de um
-    checkout, vale $env:MC_CODE_ROOT. Os caminhos saem relativos à raiz, com barra normal.
+    checkout, vale $env:MC_CODE_ROOT. Sem -Path a busca cobre o checkout inteiro; só -Path explícito recorta. A
+    primeira linha diz a raiz e o recorte. Os caminhos saem relativos à raiz, com barra normal.
     Códigos de saída: 0 (mesmo sem referência), 1 erro de uso ou de ferramenta.
 #>
 param(
@@ -78,7 +79,8 @@ if ($root) {
     }
 
     $arguments = @("usages", "--worktree", $root, "--symbol", $Symbol, "--store", (Get-CodeIndexStore))
-    $scope = if ($resolvedPath.Path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { $resolvedPath.Path.Substring($root.Length).Trim('\', '/') } else { "" }
+    # Só -Path explícito recorta: o padrão (diretório atual) serve para achar a raiz, não para limitar a busca.
+    $scope = if ($PSBoundParameters.ContainsKey('Path') -and $resolvedPath.Path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { $resolvedPath.Path.Substring($root.Length).Trim('\', '/') } else { "" }
     if ($scope) { $arguments += @("--scope", $scope) }
     foreach ($glob in $Include) { if ($glob -ne "*") { $arguments += @("--include", $glob) } }
     if ($NoRefresh) { $arguments += "--no-refresh" }
@@ -89,6 +91,11 @@ if ($root) {
         Write-Host "Erro: DeclIndex usages falhou para $root (a raiz é uma worktree git?)."
         exit 1
     }
+
+    $header = "Raiz: $root"
+    if ($scope) { $header += " · Recorte: $scope" }
+    Write-Host $header
+
     foreach ($line in $lines) {
         $tab = $line.IndexOf("`t")
         if ($tab -le 0) { continue }
@@ -138,6 +145,7 @@ else {
 # ---------- Saída ----------
 if ($results.Count -eq 0) {
     Write-Host "Nenhuma referência encontrada para: $Symbol"
+    if ($root -and $scope) { Write-Host "Só $scope foi consultado; -Path $root cobre o checkout inteiro." }
     exit 0
 }
 

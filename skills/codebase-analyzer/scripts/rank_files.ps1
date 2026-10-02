@@ -13,7 +13,8 @@
     .\rank_files.ps1 Voucher Cancel -Top 10 -Include *.cs
     .\rank_files.ps1 CardToken Cielo -Path Applications\Cloud
 .NOTES
-    Saída: score, caminho relativo à raiz, termos casados e as primeiras linhas de cada acerto.
+    Saída: a raiz (e o recorte, com -Path) e, por arquivo, score, caminho relativo à raiz, termos casados e as
+    primeiras linhas de cada acerto. Sem -Path a busca cobre o checkout inteiro; só -Path explícito recorta.
     -NoRefresh consulta corpus e manifesto já materializados sem passar pelo git (pode estar defasado).
     Códigos de saída: 0 achou, 1 erro de uso ou de ferramenta, 3 nada encontrado.
 #>
@@ -56,7 +57,8 @@ if (-not (Test-Path $exe)) {
 
 $arguments = @("search", "--worktree", $root, "--store", (Get-CodeIndexStore), "--top", $Top)
 foreach ($term in $Terms) { $arguments += @("--term", $term) }
-$scope = if ($resolvedPath.Path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { $resolvedPath.Path.Substring($root.Length).Trim('\', '/') } else { "" }
+# Só -Path explícito recorta: o padrão (diretório atual) serve para achar a raiz, não para limitar a busca.
+$scope = if ($PSBoundParameters.ContainsKey('Path') -and $resolvedPath.Path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { $resolvedPath.Path.Substring($root.Length).Trim('\', '/') } else { "" }
 if ($scope) { $arguments += @("--scope", $scope) }
 foreach ($glob in $Include) { if ($glob -ne "*") { $arguments += @("--include", $glob) } }
 if ($NoRefresh) { $arguments += "--no-refresh" }
@@ -67,9 +69,12 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-Write-Host "Raiz: $root"
+$header = "Raiz: $root"
+if ($scope) { $header += " · Recorte: $scope" }
+Write-Host $header
 if ($lines.Count -eq 0) {
     Write-Host "Nenhum arquivo com os termos: $($Terms -join ', ')"
+    if ($scope) { Write-Host "Só $scope foi consultado; -Path $root cobre o checkout inteiro." }
     exit 3
 }
 
