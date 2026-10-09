@@ -38,8 +38,8 @@ public static class ShellCommandParser
 	private static readonly Regex Redirection = new(@"(?<=\s)(?:\d?>{1,2}|&>|<)\s*(?:&\d+|[^\s;|&()<>]+)");
 	private static readonly Regex RecursiveShortFlag = new(@"\A-[a-zA-Z]*[rR][a-zA-Z]*\z");
 	private static readonly Regex ShortFlags = new(@"\A-[a-zA-Z]+\d*\z");
-	private static readonly Regex StarExtension = new(@"\*\.([A-Za-z0-9]+)");
-	private static readonly Regex TypeOption = new(@"(?:^|\s)(?:-t\s*|--type[= ]\s*)([A-Za-z0-9]+)");
+	private static readonly Regex BraceList = new(@"\A(.*)\{([^{}]*)\}(.*)\z");
+	private static readonly Regex SimpleExtension = new(@"\A[A-Za-z0-9]+\z");
 	private static readonly Regex BashAssignment = new(@"\A([A-Za-z_]\w*)=(.*)\z", RegexOptions.Singleline);
 	private static readonly Regex VariableReference = new(@"\$\{?([A-Za-z_]\w*)\}?");
 
@@ -51,13 +51,13 @@ public static class ShellCommandParser
 	/// que vem depois (o ".Count" de <c>(... | Select-String x).Count</c>) não é argumento dele. Quebra de linha logo depois de
 	/// |, || ou &amp;&amp; continua o comando na linha seguinte. Lança FormatException se as aspas não fecham.
 	/// </summary>
-	public static List<ShellSegment> SplitSegments(string command)
+	public static List<ShellSegment> SplitSegments(string command, bool powerShell = false)
 	{
 		var segments = new List<ShellSegment>();
 		var current = new List<string>();
 		var piped = false;
 
-		foreach (var token in Tokenize(StripRedirections(command)))
+		foreach (var token in Tokenize(StripRedirections(command), powerShell))
 		{
 			if (token == NewLine || IsRunOf(token, ')'))
 			{
@@ -87,9 +87,9 @@ public static class ShellCommandParser
 
 	/// <summary>
 	/// Tokenizador no modo posix do shlex com punctuation_chars: aspas somem, \ escapa, ();&lt;&gt;|&amp; viram tokens próprios e
-	/// a quebra de linha fora das aspas vira o token <see cref="NewLine"/>.
+	/// a quebra de linha fora das aspas vira o token <see cref="NewLine"/>. No PowerShell o \ é separador de caminho, não escape.
 	/// </summary>
-	public static List<string> Tokenize(string command)
+	public static List<string> Tokenize(string command, bool powerShell = false)
 	{
 		var tokens = new List<string>();
 		var word = new StringBuilder();
@@ -122,7 +122,7 @@ public static class ShellCommandParser
 				while (index < command.Length)
 				{
 					var inner = command[index];
-					if (inner == '\\' && index + 1 < command.Length && (command[index + 1] == '"' || command[index + 1] == '\\'))
+					if (!powerShell && inner == '\\' && index + 1 < command.Length && (command[index + 1] == '"' || command[index + 1] == '\\'))
 					{
 						word.Append(command[index + 1]);
 						index += 2;
@@ -143,7 +143,7 @@ public static class ShellCommandParser
 				if (!closed) throw new FormatException("aspas duplas sem fechar");
 				inWord = true;
 			}
-			else if (character == '\\')
+			else if (character == '\\' && !powerShell)
 			{
 				if (index + 1 >= command.Length) throw new FormatException("escape sem caractere");
 				word.Append(command[index + 1]);
@@ -155,7 +155,7 @@ public static class ShellCommandParser
 				// Substituição de comando ($(...)) ou de processo (<(...), >(...)) é um único token opaco: o comando de
 				// dentro não vira padrão nem caminho do comando de fora — "-f <(git diff ...)" consumia só o "<(" e o
 				// "git" seguinte virava o padrão do grep.
-				var close = FindSubstitutionEnd(command, index + 2);
+				var close = FindSubstitutionEnd(command, index + 2, powerShell);
 				if (character != '$') Flush();
 				word.Append(character).Append("(...)");
 				inWord = true;
@@ -189,7 +189,7 @@ public static class ShellCommandParser
 	private static bool IsPunctuation(char character) => character is '(' or ')' or ';' or '<' or '>' or '|' or '&';
 
 	/// <summary>Índice do ")" que fecha a substituição aberta antes de <paramref name="start"/>, pulando aninhamentos e aspas. Lança FormatException se não fecha.</summary>
-	private static int FindSubstitutionEnd(string command, int start)
+	private static int FindSubstitutionEnd(string command, int start, bool powerShell)
 	{
 		var depth = 1;
 		var index = start;
@@ -205,7 +205,7 @@ public static class ShellCommandParser
 				continue;
 			}
 
-			if (character == '\\') { index += 2; continue; }
+			if (character == '\\' && !powerShell) { index += 2; continue; }
 			if (character == '(') depth++;
 			if (character == ')' && --depth == 0) return index;
 			index++;
@@ -405,13 +405,76 @@ public static class ShellCommandParser
 		return null;
 	}
 
-	/// <summary>Extensões pedidas explicitamente na linha inteira: <c>*.cs</c>, <c>--include=*.cs</c>, <c>-t cs</c>, <c>--type=cs</c>.</summary>
-	public static HashSet<string> ExtensionHints(string command)
+	/// <summary>
+	/// O que os filtros de extensão dos comandos dizem sobre .cs: false se algum exclui .cs; com inclusão, se ela inclui .cs;
+	/// null sem filtro. Só contam os filtros dos próprios comandos: --include/--exclude do grep, -g/--glob (! exclui) e -t/-T
+	/// do rg, -Include/-Exclude do Select-String e do Get-ChildItem, -Filter do Get-ChildItem e -name/-iname do find.
+	/// </summary>
+	public static bool? ExtensionFilterIncludesCSharp(IEnumerable<ShellCommand> commands)
 	{
-		var hints = new HashSet<string>(StringComparer.Ordinal);
-		foreach (Match match in StarExtension.Matches(command)) hints.Add(match.Groups[1].Value.ToLowerInvariant());
-		foreach (Match match in TypeOption.Matches(command)) hints.Add(match.Groups[1].Value.ToLowerInvariant());
-		return hints;
+		var included = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+		foreach (var command in commands)
+		{
+			var arguments = command.Arguments;
+			for (var index = 0; index < arguments.Count; index++)
+			{
+				var token = arguments[index];
+				if (token.Length < 2 || !token.StartsWith('-')) continue;
+
+				var equals = token.IndexOf('=');
+				var option = equals > 0 ? token.Substring(0, equals) : token;
+				var value = equals > 0 ? token.Substring(equals + 1) : index + 1 < arguments.Count ? arguments[index + 1] : "";
+				var lower = option.ToLowerInvariant();
+
+				switch (command.Name)
+				{
+					case "grep" or "egrep" or "fgrep":
+						if (option == "--include") AddGlobExtensions(included, value);
+						else if (option == "--exclude") AddGlobExtensions(excluded, value);
+						break;
+					case "rg":
+						if (option is "-g" or "--glob" or "--iglob") AddGlobExtensions(value.StartsWith('!') ? excluded : included, value.TrimStart('!'));
+						else if (option is "-t" or "--type") included.Add(value);
+						else if (option is "-T" or "--type-not") excluded.Add(value);
+						else if (option.StartsWith("-t") && !option.StartsWith("--")) included.Add(option.Substring(2));
+						else if (option.StartsWith("-T") && !option.StartsWith("--")) excluded.Add(option.Substring(2));
+						break;
+					case "select-string" or "sls" or "get-childitem" or "gci" or "ls" or "dir":
+						if (lower.StartsWith("-inc") || lower.StartsWith("-fil")) AddGlobExtensions(included, value);
+						else if (lower.StartsWith("-exc")) AddGlobExtensions(excluded, value);
+						break;
+					case "find":
+						if (option is "-name" or "-iname") AddGlobExtensions(included, value);
+						break;
+				}
+			}
+		}
+
+		if (excluded.Contains("cs")) return false;
+		return included.Count > 0 ? included.Contains("cs") : null;
+	}
+
+	private static void AddGlobExtensions(HashSet<string> extensions, string glob) => extensions.UnionWith(GlobExtensions(glob));
+
+	/// <summary>Extensões que um glob nomeia: <c>**/*.cs</c> → cs; <c>*.{json,yml}</c> e <c>*.json,*.yml</c> → json e yml; <c>*.csv</c> → csv.</summary>
+	public static HashSet<string> GlobExtensions(string glob)
+	{
+		var brace = BraceList.Match(glob);
+		var alternatives = brace.Success
+			? brace.Groups[2].Value.Split(',').Select(item => brace.Groups[1].Value + item + brace.Groups[3].Value)
+			: glob.Split(',');
+
+		var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (var alternative in alternatives)
+		{
+			var name = Regex.Split(alternative, @"[/\\]")[^1];
+			var extension = name.Substring(name.LastIndexOf('.') + 1);
+			if (name.Contains('.') && SimpleExtension.IsMatch(extension)) extensions.Add(extension.ToLowerInvariant());
+		}
+
+		return extensions;
 	}
 
 	/// <summary>Só interessa busca que varre arquivos; grep lendo de um pipe ou de stdin não é busca na árvore.</summary>

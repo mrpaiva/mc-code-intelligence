@@ -20,6 +20,9 @@ public class HookTests
 		Directory.CreateDirectory(Path.Combine(raiz, "Applications", "X", "Sources"));
 		Directory.CreateDirectory(Path.Combine(raiz, "Components"));
 		File.WriteAllText(Path.Combine(raiz, "Applications", "X", "Sources", "Foo.cs"), "class Foo {}\n");
+		Directory.CreateDirectory(Path.Combine(raiz, "Pipelines", "Build"));
+		File.WriteAllText(Path.Combine(raiz, "Pipelines", "Build", "build.yml"), "trigger: none\n");
+		File.WriteAllText(Path.Combine(raiz, ".gitignore"), "bin/\n");
 		// O hook é registrado no nível de usuário e só age sob estas raízes; nos testes, a pasta temporária inteira.
 		ambiente = new HookEnvironment(Scripts, [Path.GetTempPath()]);
 	}
@@ -559,13 +562,17 @@ public class HookTests
 		public string Root { get; } = Directory.CreateTempSubdirectory("hook-tree-").FullName;
 		public string Docs => Path.Combine(Root, "Documents");
 		public string Code => Path.Combine(Root, "Code");
+		public string Biblioteca => Path.Combine(Root, "Biblioteca");
 
 		public Árvore()
 		{
 			Directory.CreateDirectory(Path.Combine(Docs, "Sessions"));
 			File.WriteAllText(Path.Combine(Docs, "Sessions", "notas.md"), "class Foo\n");
 			Directory.CreateDirectory(Path.Combine(Code, "Applications", "X", "Sources"));
+			Directory.CreateDirectory(Path.Combine(Code, "Components"));
 			File.WriteAllText(Path.Combine(Code, "Applications", "X", "Sources", "Foo.cs"), "class Foo {}\n");
+			Directory.CreateDirectory(Path.Combine(Biblioteca, "Src"));
+			File.WriteAllText(Path.Combine(Biblioteca, "Src", "Lib.cs"), "class Lib {}\n");
 		}
 
 		public void Dispose() => Directory.Delete(Root, true);
@@ -663,6 +670,109 @@ public class HookTests
 		var inexistente = Path.Combine(árvore.Root, "scripts").Replace('\\', '/');
 
 		Executar("Bash", Shell($"grep -rl -e \"em comando Bash\" \"{inexistente}\""), cwd: árvore.Root).Denied.Should().BeFalse();
+	}
+
+	// ---------- Alvo fora de um checkout do Code: o índice e o corpus não o cobrem, então a busca crua passa ----------
+
+	[TestMethod]
+	public void Grep_em_pasta_com_cs_fora_de_um_checkout_do_Code_é_permitido()
+	{
+		using var árvore = new Árvore();
+
+		Executar("Grep", Grep("PermissionMode", path: árvore.Biblioteca)).Denied.Should().BeFalse();
+		Executar("Bash", Shell($"grep -rn \"PermissionMode\" \"{árvore.Biblioteca.Replace('\\', '/')}\"")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Listagem_de_cs_fora_de_um_checkout_do_Code_é_permitida()
+	{
+		using var árvore = new Árvore();
+
+		Executar("Bash", Shell($"find \"{árvore.Biblioteca.Replace('\\', '/')}\" -name '*.cs'")).Denied.Should().BeFalse();
+		Executar("Glob", new Dictionary<string, object?> { ["pattern"] = "**/*.cs", ["path"] = árvore.Biblioteca }).Denied.Should().BeFalse();
+	}
+
+	// ---------- Leitura do caminho: caminho mal lido vira inexistente, e inexistente dentro do Code conta como código ----------
+
+	[TestMethod]
+	public void Grep_num_arquivo_sem_extensão_é_permitido()
+	{
+		Executar("Bash", Shell("grep -n \"bin\" .gitignore")).Denied.Should().BeFalse();
+		Executar("Grep", Grep("bin", path: Path.Combine(raiz, ".gitignore"))).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Til_é_a_pasta_do_usuário_e_não_uma_pasta_sob_o_cwd()
+	{
+		Executar("Bash", Shell("grep -rn \"PermissionMode\" ~/.pasta-que-nao-existe")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Barra_invertida_no_PowerShell_separa_pastas_e_não_escapa()
+	{
+		using var árvore = new Árvore();
+
+		Executar("PowerShell", Shell("rg PermissionMode Pipelines\\Build")).Denied.Should().BeFalse();
+		Executar("PowerShell", Shell("rg MemberController Code\\Applications\\X\\Sources"), cwd: árvore.Root).Denied.Should().BeTrue();
+	}
+
+	[TestMethod]
+	public void Curinga_no_caminho_é_julgado_pela_pasta_antes_dele()
+	{
+		Executar("Bash", Shell("grep -n \"PermissionMode\" Pipelines/*")).Denied.Should().BeFalse();
+		Executar("PowerShell", Shell("Select-String -Path Pipelines\\Build\\* -Pattern PermissionMode")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Curinga_sem_recursão_lê_só_os_arquivos_da_pasta()
+	{
+		Executar("Bash", Shell("grep -n \"LangVersion\" *")).Denied.Should().BeFalse();
+		Executar("Bash", Shell("grep -rn \"LangVersion\" *")).Denied.Should().BeTrue();
+		Executar("PowerShell", Shell("Select-String -Path Applications\\X\\Sources\\* -Pattern MemberController")).Denied.Should().BeTrue();
+	}
+
+	[TestMethod]
+	public void Busca_alimentada_por_listagem_é_julgada_pela_pasta_da_listagem()
+	{
+		using var árvore = new Árvore();
+
+		Executar("PowerShell", Shell($"Get-ChildItem \"{árvore.Docs}\" -Recurse -File | Select-String -Pattern TODO")).Denied.Should().BeFalse();
+		Executar("Bash", Shell($"find \"{árvore.Docs.Replace('\\', '/')}\" -type f | xargs grep -n TODO")).Denied.Should().BeFalse();
+	}
+
+	// ---------- Filtro de extensão: só o da própria busca, e exclusão não é inclusão ----------
+
+	[TestMethod]
+	public void Filtro_que_exclui_cs_não_torna_o_alvo_CSharp()
+	{
+		Executar("Bash", Shell("grep -rn \"MemberController\" --exclude=*.cs Applications/")).Denied.Should().BeFalse();
+		Executar("Bash", Shell("rg -g '!*.cs' MemberController Applications/")).Denied.Should().BeFalse();
+		Executar("Grep", Grep("MemberController", glob: "!*.cs")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Extensão_citada_em_outro_comando_da_linha_não_filtra_o_grep()
+	{
+		Executar("Bash", Shell("ls Applications/X/Sources/*.cs; grep -rn \"PermissionMode\" Pipelines/")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Include_com_chaves_é_lido_como_lista_de_extensões()
+	{
+		Executar("Bash", Shell("grep -rn \"MemberController\" --include=*.{json,yml} Applications/")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Glob_csv_da_ferramenta_Grep_não_é_cs()
+	{
+		Executar("Grep", Grep("MemberController", glob: "*.csv")).Denied.Should().BeFalse();
+	}
+
+	[TestMethod]
+	public void Find_com_type_alimentando_xargs_grep_em_pasta_com_cs_é_negado()
+	{
+		// O -type f do find não é o -t de tipo do rg.
+		Executar("Bash", Shell("find Applications -type f | xargs grep -n \"MemberController\"")).Denied.Should().BeTrue();
 	}
 
 	// ---------- Read ----------

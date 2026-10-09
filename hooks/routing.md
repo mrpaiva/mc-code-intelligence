@@ -21,7 +21,7 @@ a primeira linha da saída diz qual foi usada.
 | Estrutura de UM `.cs` | `& "{{SCRIPTS}}\find_declarations.ps1" -File <caminho/do/arquivo.cs>` — classes, métodos e propriedades, com linha |
 | Preview de arquivo não-C# | `& "{{SCRIPTS}}\summarize_file.ps1" <caminho>` |
 | O que mudou | `git diff --name-only HEAD` |
-| Regex real, linhas de contexto (`-A/-B/-C`), `-i`, multiline, ou busca num arquivo único | `Grep`: a única exceção. Identificador puro em pasta com C# é negado pelo hook, no `Grep` e no Bash |
+| Regex real, linhas de contexto (`-A/-B/-C`), `-i`, multiline, ou busca num arquivo único | `Grep`: a única exceção. Identificador puro em pasta com C# do checkout é negado pelo hook, no `Grep` e no Bash |
 
 ### Regra de uso
 1. Declaração → `find_declarations`; uso → `find_usages`. Antes de abrir qualquer arquivo.

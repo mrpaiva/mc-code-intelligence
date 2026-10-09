@@ -102,7 +102,8 @@ no contexto do agente a tabela "pergunta → ferramenta" com os caminhos absolut
 versão, que compila os dois executáveis). E a cada
 chamada de `Glob`, `Grep`, `Read`, `Bash` ou `PowerShell`, o hook `PreToolUse` (o `DeclIndex.Hook.exe`, um
 executável só com as regras, sem Roslyn e sem Python) aplica as regras: padrão com cara de declaração C# em alvo C# é negado com o comando exato do
-`find_declarations`; identificador puro em pasta com `.cs` é negado apontando os dois scripts; regex real,
+`find_declarations`; identificador puro em pasta com `.cs` do checkout é negado apontando os dois scripts (fora de um
+checkout, como pastas de configuração e outros repositórios, o índice não cobre e a busca passa); regex real,
 contexto (`-A/-B/-C`), `-i`, multiline ou arquivo único passam; `grep`, `rg`, `git grep`, `findstr` e
 `Select-String` dentro do shell seguem a mesma regra, e `find -name "*.cs"` segue a do `Glob`. Leitura
 integral de `.cs` com 2000+ linhas (ou outro código com 500+) sem `limit` é negada apontando o

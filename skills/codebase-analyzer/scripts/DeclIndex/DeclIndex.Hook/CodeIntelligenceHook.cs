@@ -13,10 +13,13 @@ namespace DeclIndex.Hook;
 ///          regex real, contexto, -i ou multiline → permite.
 ///   Read : .cs sem limit e ≥ 2000 linhas, ou outro código sem limit e ≥ 500 → nega e aponta summarize_file/find_declarations -File.
 ///   Bash/PowerShell : grep, rg, git grep, findstr e Select-String seguem a regra do Grep; find -name e
-///          Get-ChildItem -Recurse -Filter/-Include seguem a do Glob. Busca lendo de um pipe passa. F=caminho da
-///          própria linha resolve o $F do alvo; variável sem valor conhecido não tem alvo para julgar e passa;
-///          git grep padrão <rev> -- lê outro commit e passa.
-/// O hook só age dentro de um checkout do Code (ancestral com Applications\ e Components\) ou sob MC_HOOK_ROOTS.
+///          Get-ChildItem -Recurse -Filter/-Include seguem a do Glob. Busca lendo de um pipe passa; alimentada por
+///          listagem (gci P | Select-String, find P | xargs grep), o alvo é a pasta da listagem. Filtro de extensão é o
+///          do próprio comando e da listagem que o alimenta. F=caminho da própria linha resolve o $F do alvo; variável
+///          sem valor conhecido não tem alvo para julgar e passa; git grep padrão <rev> -- lê outro commit e passa.
+/// O hook só age dentro de um checkout do Code (ancestral com Applications\ e Components\) ou sob MC_HOOK_ROOTS, e só
+/// julga alvos dentro de um checkout do Code: fora dele (pasta de configuração, outro repositório) o índice e o corpus
+/// não cobrem, e a busca crua passa.
 /// </summary>
 public static class CodeIntelligenceHook
 {
@@ -134,8 +137,8 @@ public static class CodeIntelligenceHook
 
 	/// <summary>
 	/// Listagem sob caminho explícito abaixo de Applications\ ou Components\ (ou fora deles) é varredura de uma pasta, não a
-	/// varredura cross-project que a regra do Glob evita. Raiz, Applications\ e Components\ inteiros continuam amplos; variável
-	/// sem valor conhecido não dá para julgar e passa.
+	/// varredura cross-project que a regra do Glob evita, e fora de um checkout do Code o find_declarations não cobre. Raiz,
+	/// Applications\ e Components\ inteiros continuam amplos; variável sem valor conhecido não dá para julgar e passa.
 	/// </summary>
 	public static bool ListingIsBounded(string start, string? basePath)
 	{
@@ -144,7 +147,7 @@ public static class CodeIntelligenceHook
 
 		var resolved = NormalizeDirectory(ResolvePath(start, basePath));
 		var root = FindCodeAncestor(resolved);
-		if (root == null) return false;
+		if (root == null) return true;
 
 		var relative = resolved.Length > root.Length ? resolved.Substring(root.Length).Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) : "";
 		if (relative.Length == 0) return false;
@@ -259,13 +262,23 @@ public static class CodeIntelligenceHook
 
 	// ---------- Alvo ----------
 
-	/// <summary>Caminho absoluto: converte <c>/e/x</c> do Git Bash em <c>E:/x</c> e resolve relativo contra a base (cwd do payload).</summary>
+	/// <summary>
+	/// Caminho absoluto: converte <c>/e/x</c> do Git Bash em <c>E:/x</c>, <c>~</c> na pasta do usuário, e resolve relativo
+	/// contra a base (cwd do payload).
+	/// </summary>
 	public static string ResolvePath(string? path, string? basePath)
 	{
 		path = GitBashDrive.Replace(path ?? "", match => match.Groups[1].Value.ToUpperInvariant() + ":/");
+		if (path == "~" || path.StartsWith("~/") || path.StartsWith(@"~\")) path = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + path.Substring(1);
 		if (basePath != null && !Path.IsPathRooted(path)) path = Path.Combine(basePath, path);
 		return path;
 	}
+
+	/// <summary>
+	/// Dentro de um checkout do Code, o único lugar que o índice e o corpus cobrem. Caminho relativo sem cwd conhecido não dá
+	/// para situar e conta como dentro, como a sessão sem cwd.
+	/// </summary>
+	private static bool InsideCode(string path) => !Path.IsPathRooted(path) || FindCodeAncestor(NormalizeDirectory(path)) != null;
 
 	/// <summary>
 	/// Verdadeiro se houver algum .cs até maxDepth níveis. Árvore grande demais para decidir dentro do teto de entradas
@@ -306,16 +319,31 @@ public static class CodeIntelligenceHook
 	}
 
 	/// <summary>
-	/// Pasta existente: só é C# se tiver .cs dentro. Arquivo: a extensão decide (um .ps1 ou .md nunca é declaração C#).
-	/// O disco é consultado antes da extensão porque pastas com ponto no nome (MultiClubes.Controller) são a regra no Code.
+	/// Pasta existente: só é C# se tiver .cs dentro. Arquivo (existente ou com extensão): a extensão decide (um .ps1, .md ou
+	/// .gitignore nunca é declaração C#). O disco é consultado antes da extensão porque pastas com ponto no nome
+	/// (MultiClubes.Controller) são a regra no Code.
 	/// </summary>
-	public static bool PathIsCSharp(string path)
+	public static bool PathIsCSharp(string path, bool recursive = true)
 	{
 		if (Directory.Exists(path)) return DirectoryHasCSharp(path);
 
 		var extension = ExtensionOf(path);
-		if (extension.Length > 0) return extension.Equals(".cs", StringComparison.OrdinalIgnoreCase);
+		if (extension.Length > 0 || File.Exists(path)) return extension.Equals(".cs", StringComparison.OrdinalIgnoreCase);
+		if (path.IndexOfAny(['*', '?']) >= 0) return WildcardIsCSharp(path, recursive);
 		return DirectoryHasCSharp(path);
+	}
+
+	/// <summary>
+	/// Curinga só no nome (<c>pasta/*</c>) numa busca sem recursão lê os arquivos da pasta; com recursão, ou com curinga numa
+	/// pasta do meio, decide a pasta antes dele.
+	/// </summary>
+	private static bool WildcardIsCSharp(string path, bool recursive)
+	{
+		var parts = Regex.Split(path, @"[/\\]");
+		var folder = GlobPrefix(path);
+		if (recursive || parts[..^1].Any(part => part.IndexOfAny(['*', '?']) >= 0)) return PathIsCSharp(folder);
+
+		return Directory.Exists(folder) && Directory.EnumerateFiles(folder, parts[^1]).Any(file => file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase));
 	}
 
 	/// <summary>
@@ -339,12 +367,15 @@ public static class CodeIntelligenceHook
 
 	private static bool IsCSharpTarget(HookRequest request)
 	{
+		var target = ResolvePath(request.GetString("path") ?? "", request.Cwd);
+		if (!InsideCode(target)) return false;
+
 		var fileType = (request.GetString("type") ?? "").ToLowerInvariant();
-		var glob = (request.GetString("glob") ?? "").ToLowerInvariant();
+		var glob = request.GetString("glob") ?? "";
 
 		if (fileType.Length > 0) return fileType is "cs" or "csharp";
-		if (glob.Length > 0) return glob.Contains(".cs") && !glob.Contains(".csproj") && !glob.Contains(".cshtml");
-		return PathIsCSharp(ResolvePath(request.GetString("path") ?? "", request.Cwd));
+		if (glob.Length > 0) return !glob.StartsWith('!') && ShellCommandParser.GlobExtensions(glob).Contains("cs");
+		return PathIsCSharp(target);
 	}
 
 	// ---------- Grep ----------
@@ -381,7 +412,7 @@ public static class CodeIntelligenceHook
 		List<ShellSegment> segments;
 		try
 		{
-			segments = ShellCommandParser.SplitSegments(command);
+			segments = ShellCommandParser.SplitSegments(command, request.ToolName == "PowerShell");
 		}
 		catch (FormatException)
 		{
@@ -409,12 +440,18 @@ public static class CodeIntelligenceHook
 			if (search.SearchesRevision) continue;
 			if (!ShellCommandParser.IsTreeSearch(name!, search.Paths, search.Recursive, segments[position].Piped, previousName, fedByXargs)) continue;
 
+			// gci P | Select-String e find P | xargs grep: a busca lê o que a listagem entrega, então a pasta e o filtro dela contam.
+			var feeding = segments[position].Piped && previousName != null && ShellCommandParser.ListingCommands.Contains(previousName) ? named[position - 1] : null;
+			var listingPath = feeding == null ? null : ShellCommandParser.ListingPath(feeding.Name!, feeding.Arguments);
+			IReadOnlyList<string> searchPaths = search.Paths.Count == 0 && listingPath != null ? [listingPath] : search.Paths;
+
 			// F=caminho da própria linha resolve; variável de $(...) ou de pipeline não, e sem valor não há alvo para julgar.
-			var paths = search.Paths.Select(path => ShellCommandParser.Resolve(path, assignments)).ToList();
+			var paths = searchPaths.Select(path => ShellCommandParser.Resolve(path, assignments)).ToList();
 			if (paths.Count > 0 && paths.All(ShellCommandParser.HasVariable)) continue;
 			paths = paths.Where(path => !ShellCommandParser.HasVariable(path)).ToList();
 
-			if (!ShellTargetIsCSharp(command, paths, basePath)) continue;
+			var filter = ShellCommandParser.ExtensionFilterIncludesCSharp(feeding == null ? [named[position]] : [named[position], feeding]);
+			if (!ShellTargetIsCSharp(filter, paths, basePath, search.Recursive)) continue;
 
 			// Só arquivos nomeados (sem pasta): o find_usages só recebe pasta; aqui grep, Read ou LSP são o caminho, seja qual for o padrão.
 			if (paths.Count > 0 && paths.All(path => LooksLikeFile(path, basePath))) continue;
@@ -445,14 +482,13 @@ public static class CodeIntelligenceHook
 		return HookDecision.Allow;
 	}
 
-	/// <summary>Mesma regra do IsCSharpTarget: filtro explícito decide; senão cada caminho (ou o cwd) decide.</summary>
-	private static bool ShellTargetIsCSharp(string command, IReadOnlyList<string> paths, string? basePath)
+	/// <summary>Mesma regra do IsCSharpTarget: só alvo dentro de um checkout do Code conta; ali o filtro de extensão decide, e sem ele cada caminho (ou o cwd).</summary>
+	private static bool ShellTargetIsCSharp(bool? filter, IReadOnlyList<string> paths, string? basePath, bool recursive)
 	{
-		var hints = ShellCommandParser.ExtensionHints(command);
-		if (hints.Count > 0) return hints.Contains("cs");
+		var targets = (paths.Count > 0 ? paths : [""]).Select(path => ResolvePath(path, basePath)).Where(InsideCode).ToList();
+		if (targets.Count == 0) return false;
 
-		var targets = paths.Count > 0 ? paths : [""];
-		return targets.Any(path => PathIsCSharp(ResolvePath(path, basePath)));
+		return filter ?? targets.Any(path => PathIsCSharp(path, recursive));
 	}
 
 	// ---------- Read ----------
